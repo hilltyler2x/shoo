@@ -3,7 +3,8 @@ dist
 dev-dist
 .env
 .env.*
-!.env.app.example
+!.env.app
 *.p8
 *.log
 .DS_Store
+*.tsbuildinfo

@@ -63,6 +63,25 @@ Optional server settings (in your shell or Render's dashboard):
 | `CONTACT_EMAIL` | Sent to OpenStreetMap's search, as its usage policy asks. |
 | `RATE_LIMIT_PER_HOUR` | Requests per visitor per hour. Default 300. |
 
+## Phone apps (Capacitor)
+
+The same code wrapped as an iPhone and Android app. App ID / bundle ID:
+**`com.tylerhill.shoo`** (it must match Apple's Identifier and the App Store
+Connect record exactly).
+
+- `npm run build:app` builds the website against the live server
+  (`VITE_API_URL` in `.env.app`) and copies it into `ios/` and `android/`.
+- The app's own native plugin does the background work:
+  `ios/App/App/ShooNative.swift` and
+  `android/app/src/main/java/com/tylerhill/shoo/` (scheduled nags, the
+  "you left" / "you made it" geofences, the "I've left" button on each nag).
+  The JavaScript side is `src/platform/native/`.
+- `.github/workflows/build.yml` builds a test APK on every merge to `main`
+  (at `releases/download/test-build/Shoo-test.apk`) and uploads the iPhone app
+  to TestFlight from a `macos-26` runner once the four Apple secrets exist:
+  `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`.
+- `npm run icons` re-renders every icon from `public/icon.svg`.
+
 ## Deploy
 
 `render.yaml` is a Render Blueprint: render.com → New → Blueprint → pick this

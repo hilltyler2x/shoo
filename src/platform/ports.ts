@@ -22,6 +22,44 @@ export interface LocationPort {
   watch(onFix: (fix: LatLng) => void, onError?: (message: string) => void): () => void;
 }
 
+export interface TripWatch {
+  shiftId: string;
+  shiftStart: number;
+  /** Leaving before this doesn't count (a late-night snack run). */
+  watchFrom: number;
+  origin: LatLng;
+  job: LatLng;
+  radius: number;
+  celebrateTitle: string;
+  onTimeBody: string;
+  lateBody: string;
+}
+
+export interface TripEvent {
+  type: 'left' | 'arrived';
+  shiftId: string;
+  at: number;
+}
+
+/**
+ * Watches for leaving and arriving while the app is closed (geofences), and
+ * cancels the rest of a shift's nags by itself. The website can't do this,
+ * so there it does nothing and the app watches location while it's open.
+ */
+export interface TripPort {
+  readonly native: boolean;
+  /** "granted" means "Always" location: geofences work with the app closed. */
+  backgroundPermission(): Promise<PermissionState | 'when-in-use'>;
+  requestBackground(): Promise<PermissionState | 'when-in-use'>;
+  openSettings(): Promise<void>;
+  watch(trip: TripWatch): Promise<void>;
+  clear(): Promise<void>;
+  markLeft(): Promise<void>;
+  /** Events that happened while the app wasn't listening. Clears them. */
+  takeEvents(): Promise<TripEvent[]>;
+  onEvent(fn: (event: TripEvent) => void): () => void;
+}
+
 export interface StoragePort {
   load<T>(key: string, fallback: T): T;
   save<T>(key: string, value: T): void;
@@ -32,4 +70,5 @@ export interface Platform {
   notifications: NotificationPort;
   location: LocationPort;
   storage: StoragePort;
+  trip: TripPort;
 }

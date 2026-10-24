@@ -3,10 +3,12 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     VitePWA({
+      // The phone apps ship their files inside the app; a service worker would only get in the way.
+      disable: mode === 'app',
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'apple-touch-icon.png'],
       manifest: {
@@ -36,4 +38,4 @@ export default defineConfig({
     env: { TZ: 'America/Chicago' },
     include: ['tests/**/*.test.ts'],
   },
-});
+}));

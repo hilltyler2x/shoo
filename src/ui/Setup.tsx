@@ -84,8 +84,40 @@ export function Setup({ shoo }: { shoo: ShooState }) {
         )}
       </section>
 
+      {shoo.backgroundLocation !== 'unsupported' && <BackgroundLocation shoo={shoo} />}
+
       {shoo.passcodeRequired && <Passcode shoo={shoo} />}
     </div>
+  );
+}
+
+function BackgroundLocation({ shoo }: { shoo: ShooState }) {
+  const state = shoo.backgroundLocation;
+  return (
+    <section className="card">
+      <h2>Notice when I leave</h2>
+      {state === 'granted' ? (
+        <p className="hint">
+          ✅ Location is set to Always. Shoo stops nagging the moment you head out, even when the app is closed.
+        </p>
+      ) : (
+        <>
+          <p className="hint">
+            Set location to <strong>Always</strong> so Shoo can tell you've left and stop nagging, even when it's closed.
+            It only watches the areas around where you are and your job. Without it, tap "I've left" on a nag.
+          </p>
+          {state === 'prompt' ? (
+            <button className="btn" onClick={shoo.requestBackgroundLocation}>
+              Allow location
+            </button>
+          ) : (
+            <button className="btn" onClick={shoo.openSettings}>
+              Open Settings → Location → Always
+            </button>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 

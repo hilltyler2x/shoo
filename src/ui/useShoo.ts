@@ -24,9 +24,9 @@ import {
   type TravelEstimate,
   type TripState,
 } from '../core';
-import { platform, type PermissionState } from '../platform';
+import { platform, type PermissionState, type TripEvent } from '../platform';
 
-const { storage, notifications, location } = platform;
+const { storage, notifications, location, trip: tripPort } = platform;
 
 interface Trip extends TripState {
   /** Where you were when Shoo started watching for this shift. */
@@ -87,6 +87,10 @@ export interface ShooState {
   passcodeOk: boolean;
   submitPasscode: (value: string) => Promise<string | null>;
   firesWhenClosed: boolean;
+  /** Phone apps only: "granted" means Shoo can tell you left even when it's closed. */
+  backgroundLocation: PermissionState | 'when-in-use';
+  requestBackgroundLocation: () => Promise<void>;
+  openSettings: () => Promise<void>;
 }
 
 export function useShoo(): ShooState {
@@ -104,6 +108,7 @@ export function useShoo(): ShooState {
   const [fix, setFix] = useState<LatLng | null>(null);
   const [locationError, setLocationError] = useState('');
   const [permission, setPermission] = useState<PermissionState>('prompt');
+  const [backgroundLocation, setBackgroundLocation] = useState<PermissionState | 'when-in-use'>('unsupported');
   const [serverWaking, setServerWaking] = useState(false);
   const [passcodeRequired, setPasscodeRequired] = useState(false);
   const [passcodeOk, setPasscodeOk] = useState(true);
@@ -158,10 +163,15 @@ export function useShoo(): ShooState {
     }
   }, []);
 
-  // Notifications permission.
+  // Permissions.
   useEffect(() => {
     notifications.permission().then(setPermission);
+    tripPort.backgroundPermission().then(setBackgroundLocation);
   }, []);
+  const requestBackgroundLocation = useCallback(async () => {
+    setBackgroundLocation(await tripPort.requestBackground());
+  }, []);
+  const openSettings = useCallback(() => tripPort.openSettings(), []);
   const enableNotifications = useCallback(async () => {
     setPermission(await notifications.request());
   }, []);
@@ -285,21 +295,71 @@ export function useShoo(): ShooState {
     const { trip: next, event } = updateTrip(current, plan, watchedOrigin, job, fix, Date.now());
     const withOrigin: Trip = { ...next, origin: watchedOrigin };
     if (event || (!current.origin && Date.now() >= plan.getReadyAt - 30 * MINUTE)) setTrip(active.id, withOrigin);
-    if (event === 'arrived') celebrate(next, plan);
+    if (event === 'left') void tripPort.markLeft();
+    // On phones the work geofence sends the celebration itself.
+    if (event === 'arrived' && !tripPort.native) celebrate(next, plan);
   }, [fix]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const markLeft = useCallback(() => {
-    if (active) setTrip(active.id, { ...trip, leftAt: Date.now() });
+    if (!active) return;
+    setTrip(active.id, { ...trip, leftAt: Date.now() });
+    void tripPort.markLeft();
   }, [active, trip, setTrip]);
   const markArrived = useCallback(() => {
     if (!active) return;
     const next = { ...trip, leftAt: trip.leftAt ?? Date.now(), arrivedAt: Date.now() };
     setTrip(active.id, next);
+    void tripPort.clear();
     if (plan) celebrate(next, plan);
   }, [active, trip, plan, setTrip]);
   const resetTrip = useCallback(() => {
-    if (active) setTrip(active.id, {});
+    if (!active) return;
+    setTrip(active.id, {});
+    void tripPort.clear();
   }, [active, setTrip]);
+
+  // Phone apps: the native side notices leaving and arriving even while Shoo is closed.
+  useEffect(() => {
+    if (!tripPort.native) return;
+    const apply = (e: TripEvent) =>
+      setTrips((all) => {
+        const t = all[e.shiftId] ?? {};
+        const next: Trip =
+          e.type === 'left'
+            ? { ...t, leftAt: t.leftAt ?? e.at }
+            : { ...t, leftAt: t.leftAt ?? e.at, arrivedAt: t.arrivedAt ?? e.at };
+        return { ...all, [e.shiftId]: { ...next, updatedAt: Date.now() } };
+      });
+    const drain = () => void tripPort.takeEvents().then((events) => events.forEach(apply));
+    drain();
+    const stop = tripPort.onEvent(apply);
+    const onVisible = () => document.visibilityState === 'visible' && drain();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
+
+  // Phone apps: hand the native side the geofences for the shift we're watching.
+  const watchKey =
+    active && plan && job && origin && trip.arrivedAt === undefined
+      ? `${active.id}|${origin.lat.toFixed(3)},${origin.lng.toFixed(3)}|${trip.leftAt ?? ''}|${plan.getReadyAt}`
+      : '';
+  useEffect(() => {
+    if (!tripPort.native || !watchKey || !active || !plan || !job || !origin) return;
+    void tripPort.watch({
+      shiftId: active.id,
+      shiftStart: active.start,
+      watchFrom: plan.getReadyAt - 30 * MINUTE,
+      origin,
+      job,
+      radius: 150,
+      celebrateTitle: TIER_TITLES.celebrate,
+      onTimeBody: MESSAGES.celebrate[0].text,
+      lateBody: LATE_ARRIVAL,
+    });
+  }, [watchKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The nags for the next few shifts, as if you never get off the couch.
   const nags = useMemo(() => {
@@ -359,6 +419,9 @@ export function useShoo(): ShooState {
     passcodeOk,
     submitPasscode,
     firesWhenClosed: notifications.firesWhenClosed,
+    backgroundLocation,
+    requestBackgroundLocation,
+    openSettings,
   };
 }
 
