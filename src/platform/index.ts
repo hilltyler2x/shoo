@@ -1,5 +1,5 @@
 import { Capacitor } from '@capacitor/core';
-import { nativeLocation, nativeNotifications, nativeTrip } from './native';
+import { nativeLocation, nativeNotifications, nativeReviews, nativeTrip } from './native';
 import type { Platform } from './ports';
 import { WebLocation } from './web/location';
 import { WebNotifications } from './web/notifications';
@@ -15,6 +15,7 @@ export const platform: Platform = native
       location: nativeLocation,
       storage: new WebStorage(),
       trip: nativeTrip,
+      reviews: nativeReviews,
     }
   : {
       name: 'web',
@@ -22,6 +23,7 @@ export const platform: Platform = native
       location: new WebLocation(),
       storage: new WebStorage(),
       trip: webTrip,
+      reviews: { available: false, request: async () => {}, storeUrl: null },
     };
 
 export type * from './ports';

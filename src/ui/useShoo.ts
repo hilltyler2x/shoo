@@ -3,6 +3,10 @@ import * as api from '../api';
 import {
   DEFAULT_SETTINGS,
   LATE_ARRIVAL,
+  newReviewState,
+  recordAsk,
+  shouldAskForReview,
+  type ReviewState,
   MESSAGES,
   MINUTE,
   TIER_TITLES,
@@ -26,7 +30,7 @@ import {
 } from '../core';
 import { platform, type PermissionState, type TripEvent } from '../platform';
 
-const { storage, notifications, location, trip: tripPort } = platform;
+const { storage, notifications, location, trip: tripPort, reviews } = platform;
 
 interface Trip extends TripState {
   /** Where you were when Shoo started watching for this shift. */
@@ -91,6 +95,14 @@ export interface ShooState {
   backgroundLocation: PermissionState | 'when-in-use';
   requestBackgroundLocation: () => Promise<void>;
   openSettings: () => Promise<void>;
+  /** On-time arrivals so far, for the "Rate Shoo" nudge. */
+  onTimeArrivals: number;
+  storeUrl: string | null;
+}
+
+interface StoredReviews extends ReviewState {
+  /** Shifts already counted, so one arrival isn't counted twice. */
+  counted: string[];
 }
 
 export function useShoo(): ShooState {
@@ -113,7 +125,14 @@ export function useShoo(): ShooState {
   const [passcodeRequired, setPasscodeRequired] = useState(false);
   const [passcodeOk, setPasscodeOk] = useState(true);
 
+  const [reviewState, setReviewState] = useState<StoredReviews>(() => {
+    const saved = storage.load<StoredReviews | null>('reviews', null);
+    const base = saved ?? { ...newReviewState(Date.now()), counted: [] };
+    return { ...base, sessions: base.sessions + 1 }; // this launch
+  });
+
   useEffect(() => storage.save('settings', settings), [settings]);
+  useEffect(() => storage.save('reviews', reviewState), [reviewState]);
   useEffect(() => storage.save('trips', pruneTrips(trips, now)), [trips]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => storage.save('route', route), [route]);
   useEffect(() => storage.save('calendar', calendar), [calendar]);
@@ -361,6 +380,26 @@ export function useShoo(): ShooState {
     });
   }, [watchKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Ask for a store review right after an on-time arrival, when the rules allow.
+  useEffect(() => {
+    if (!active || !trip.arrivedAt || trip.arrivedAt > active.start) return;
+    if (reviewState.counted.includes(active.id)) return;
+    const counted: StoredReviews = {
+      ...reviewState,
+      onTimeArrivals: reviewState.onTimeArrivals + 1,
+      counted: [...reviewState.counted, active.id].slice(-20),
+    };
+    const now = Date.now();
+    const ask = reviews.available && shouldAskForReview(counted, now, trip.arrivedAt);
+    setReviewState(ask ? { ...recordAsk(counted, now), counted: counted.counted } : counted);
+    if (!ask) return;
+    // Let the "Made it" screen land first.
+    const id = window.setTimeout(() => {
+      if (document.visibilityState === 'visible') void reviews.request().catch(() => {});
+    }, 2500);
+    return () => window.clearTimeout(id);
+  }, [active?.id, trip.arrivedAt]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // The nags for the next few shifts, as if you never get off the couch.
   const nags = useMemo(() => {
     if (!estimate) return [];
@@ -422,6 +461,8 @@ export function useShoo(): ShooState {
     backgroundLocation,
     requestBackgroundLocation,
     openSettings,
+    onTimeArrivals: reviewState.onTimeArrivals,
+    storeUrl: reviews.storeUrl,
   };
 }
 

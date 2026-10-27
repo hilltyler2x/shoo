@@ -87,6 +87,16 @@ export function Setup({ shoo }: { shoo: ShooState }) {
       {shoo.backgroundLocation !== 'unsupported' && <BackgroundLocation shoo={shoo} />}
 
       {shoo.passcodeRequired && <Passcode shoo={shoo} />}
+
+      {shoo.storeUrl && (
+        <section className="card">
+          <h2>Shoo keeping you on time?</h2>
+          <p className="hint">A quick review helps other chronically late people find it.</p>
+          <a className="btn" href={shoo.storeUrl}>
+            Rate Shoo ⭐
+          </a>
+        </section>
+      )}
     </div>
   );
 }

@@ -7,3 +7,4 @@ export * from './nags';
 export * from './ics';
 export * from './shifts';
 export * from './trip';
+export * from './reviews';

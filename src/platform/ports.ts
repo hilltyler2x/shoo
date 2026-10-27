@@ -60,6 +60,15 @@ export interface TripPort {
   onEvent(fn: (event: TripEvent) => void): () => void;
 }
 
+/** The App Store / Play Store review prompt. The website has no store, so there it does nothing. */
+export interface ReviewPort {
+  readonly available: boolean;
+  /** Shows the store's own review prompt (the OS may decide not to). */
+  request(): Promise<void>;
+  /** The store page to send people to from a "Rate Shoo" button, if known. */
+  readonly storeUrl: string | null;
+}
+
 export interface StoragePort {
   load<T>(key: string, fallback: T): T;
   save<T>(key: string, value: T): void;
@@ -71,4 +80,5 @@ export interface Platform {
   location: LocationPort;
   storage: StoragePort;
   trip: TripPort;
+  reviews: ReviewPort;
 }

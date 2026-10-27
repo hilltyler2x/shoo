@@ -1,6 +1,8 @@
+import { InAppReview } from '@capacitor-community/in-app-review';
+import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import type { LatLng } from '../../core/types';
-import type { LocationPort, NotificationPort, TripPort } from '../ports';
+import type { LocationPort, NotificationPort, ReviewPort, TripPort } from '../ports';
 import { ShooNative } from './shooNative';
 
 export const nativeNotifications: NotificationPort = {
@@ -57,4 +59,18 @@ export const nativeTrip: TripPort = {
     const handle = ShooNative.addListener('trip', fn);
     return () => void handle.then((h) => h.remove());
   },
+};
+
+/** Apple's numeric app id, shown in App Store Connect → App Information → Apple ID. */
+const APP_STORE_ID = import.meta.env.VITE_APP_STORE_ID ?? '';
+
+export const nativeReviews: ReviewPort = {
+  available: true,
+  request: () => InAppReview.requestReview(),
+  storeUrl:
+    Capacitor.getPlatform() === 'android'
+      ? 'https://play.google.com/store/apps/details?id=com.tylerhill.shoo'
+      : APP_STORE_ID
+        ? `itms-apps://itunes.apple.com/app/id${APP_STORE_ID}?action=write-review`
+        : null,
 };

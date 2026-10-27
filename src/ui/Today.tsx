@@ -84,6 +84,11 @@ export function Today({ shoo, goTo }: { shoo: ShooState; goTo: (tab: 'shifts' | 
               I'm here 🏁
             </button>
           )}
+          {phase === 'arrived' && shoo.storeUrl && shoo.onTimeArrivals >= 2 && (
+            <a className="btn btn-ghost" href={shoo.storeUrl}>
+              Love Shoo? Rate it ⭐
+            </a>
+          )}
           {(phase === 'on-the-way' || phase === 'arrived') && (
             <button className="btn btn-ghost" onClick={shoo.resetTrip}>
               Oops, not yet
