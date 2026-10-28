@@ -1,6 +1,7 @@
 # Builds the phone apps.
 #  - android: a test APK on the "test-build" release, at a link that never changes:
 #    https://github.com/<you>/<repo>/releases/download/test-build/Shoo-test.apk
+#  - ios: compiles the iPhone app and publishes an unsigned .ipa for Sideloadly
 #  - testflight: archives the iPhone app on GitHub's Mac machines and uploads it
 #    to TestFlight. Skips itself until the four Apple secrets are added.
 name: Build apps
@@ -51,9 +52,51 @@ jobs:
         run: |
           if ! gh release view test-build >/dev/null 2>&1; then
             gh release create test-build --prerelease --title "Test build" \
-              --notes "Latest test build from main. Uninstall the old Shoo before installing a new one."
+              --notes "Latest test build from main. Uninstall the old Shoo before installing a new one." || true
           fi
           gh release upload test-build Shoo-test.apk --clobber
+
+  ios:
+    # Compiles the iPhone app on every change, no Apple account needed, and
+    # publishes an unsigned .ipa (for Sideloadly) next to the APK.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:app
+      - name: Build (unsigned)
+        run: |
+          xcodebuild build \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }}
+      - name: Package unsigned .ipa
+        run: |
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$RUNNER_TEMP/dd/Build/Products/Release-iphoneos/App.app" "$RUNNER_TEMP/ipa/Payload/"
+          (cd "$RUNNER_TEMP/ipa" && zip -qr "$GITHUB_WORKSPACE/Shoo-unsigned.ipa" Payload)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Shoo-unsigned-ipa
+          path: Shoo-unsigned.ipa
+      - name: Publish to the test-build release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view test-build >/dev/null 2>&1; then
+            gh release create test-build --prerelease --title "Test build" \
+              --notes "Latest test build from main. Uninstall the old Shoo before installing a new one." || true
+          fi
+          gh release upload test-build Shoo-unsigned.ipa --clobber
 
   testflight:
     # App Store Connect only accepts builds from Xcode 26 (iOS 26 SDK) or newer.
