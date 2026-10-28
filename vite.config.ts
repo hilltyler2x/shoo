@@ -3,7 +3,11 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// GitHub Pages serves the site from /shoo/, everything else from the root.
+const base = process.env.PAGES_BASE ?? '/';
+
 export default defineConfig(({ mode }) => ({
+  base,
   plugins: [
     react(),
     VitePWA({
@@ -19,7 +23,8 @@ export default defineConfig(({ mode }) => ({
         background_color: '#fff8f0',
         display: 'standalone',
         orientation: 'portrait',
-        start_url: '/',
+        start_url: base,
+        scope: base,
         icons: [
           { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' },

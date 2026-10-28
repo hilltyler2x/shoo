@@ -1,7 +1,8 @@
-// The paid or rate-limited services Shoo talks to. Keys stay on the server.
+// The map services Shoo talks to. The server uses these with its keys; the app
+// also calls the free ones directly when the server can't be reached.
 
-import { estimateTravel } from '../src/core/geo';
-import type { LatLng, Place, TravelEstimate, TravelMode } from '../src/core/types';
+import { estimateTravel } from './core/geo';
+import type { LatLng, Place, TravelEstimate, TravelMode } from './core/types';
 
 export type Fetch = typeof fetch;
 
@@ -9,6 +10,8 @@ export interface ProviderEnv {
   GOOGLE_MAPS_API_KEY?: string;
   /** Contact address sent to OpenStreetMap's free geocoder, as its usage policy asks. */
   CONTACT_EMAIL?: string;
+  /** False when calling from a browser, where a custom User-Agent forces a CORS preflight. */
+  sendUserAgent?: boolean;
 }
 
 const GOOGLE_MODES: Record<TravelMode, string> = { drive: 'DRIVE', transit: 'TRANSIT', walk: 'WALK', bike: 'BICYCLE' };
@@ -94,10 +97,9 @@ export async function geocode(env: ProviderEnv, fetchFn: Fetch, query: string): 
     return (data.results ?? []).slice(0, 5).map((r) => ({ label: r.formatted_address, location: r.geometry.location }));
   }
   const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q=${encodeURIComponent(query)}`;
-  const res = await fetchFn(url, {
-    headers: { 'User-Agent': `Shoo/0.1 (${env.CONTACT_EMAIL || 'never-be-late app'})` },
-    signal: AbortSignal.timeout(8000),
-  });
+  const headers: Record<string, string> =
+    env.sendUserAgent === false ? {} : { 'User-Agent': `Shoo/0.1 (${env.CONTACT_EMAIL || 'never-be-late app'})` };
+  const res = await fetchFn(url, { headers, signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error(`Nominatim ${res.status}`);
   const data = (await res.json()) as { display_name: string; lat: string; lon: string }[];
   return data.map((r) => ({ label: r.display_name, location: { lat: Number(r.lat), lng: Number(r.lon) } }));

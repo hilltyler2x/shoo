@@ -1,0 +1,61 @@
+# Publishes the website (no server needed) to https://hilltyler2x.github.io/shoo/
+# so it can be opened in Safari and added to the iPhone home screen.
+# One-time: repo Settings → Pages → Source: "GitHub Actions".
+name: Website (GitHub Pages)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Check Pages is turned on
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/${{ github.repository }}/pages" >/dev/null 2>&1; then
+            echo "on=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=Website not published::Turn on GitHub Pages first: Settings → Pages → Source: GitHub Actions. Then re-run this workflow."
+            echo "on=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.pages.outputs.on == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.pages.outputs.on == 'true'
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        if: steps.pages.outputs.on == 'true'
+      - name: Build for /shoo/ with no server
+        if: steps.pages.outputs.on == 'true'
+        run: npx tsc -b && npx vite build
+        env:
+          PAGES_BASE: /shoo/
+          VITE_API_URL: none
+      - uses: actions/configure-pages@v5
+        if: steps.pages.outputs.on == 'true'
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.pages.outputs.on == 'true'
+        with:
+          path: dist
+      - id: deploy
+        if: steps.pages.outputs.on == 'true'
+        uses: actions/deploy-pages@v4

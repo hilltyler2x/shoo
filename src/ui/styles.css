@@ -61,8 +61,8 @@ body {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: calc(env(safe-area-inset-top) + 12px) calc(env(safe-area-inset-right) + 16px) 10px
-    calc(env(safe-area-inset-left) + 16px);
+  padding: calc(var(--safe-area-inset-top, env(safe-area-inset-top)) + 12px) calc(var(--safe-area-inset-right, env(safe-area-inset-right)) + 16px) 10px
+    calc(var(--safe-area-inset-left, env(safe-area-inset-left)) + 16px);
 }
 
 .logo-mark {
@@ -95,7 +95,7 @@ body {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 4px calc(env(safe-area-inset-right) + 16px) 24px calc(env(safe-area-inset-left) + 16px);
+  padding: 4px calc(var(--safe-area-inset-right, env(safe-area-inset-right)) + 16px) 24px calc(var(--safe-area-inset-left, env(safe-area-inset-left)) + 16px);
 }
 
 .tabbar {
@@ -103,7 +103,7 @@ body {
   display: flex;
   border-top: 1px solid var(--line);
   background: var(--surface);
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom));
 }
 
 .tabbar button {
