@@ -56,6 +56,49 @@ jobs:
           fi
           gh release upload test-build Shoo-test.apk --clobber
 
+  android-smoke:
+    # Installs the APK on an Android emulator, opens it, and fails if it crashes.
+    # Screenshots are saved as a build artifact.
+    needs: android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Shoo-test-apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: |
+            adb install -r Shoo-test.apk
+            adb shell pm grant com.tylerhill.shoo android.permission.ACCESS_FINE_LOCATION || true
+            adb shell pm grant com.tylerhill.shoo android.permission.POST_NOTIFICATIONS || true
+            adb emu geo fix -87.6298 41.8781 || true
+            adb logcat -c
+            adb shell monkey -p com.tylerhill.shoo -c android.intent.category.LAUNCHER 1
+            sleep 20
+            adb exec-out screencap -p > smoke-1-launch.png
+            adb shell input tap 540 1500 || true
+            sleep 8
+            adb exec-out screencap -p > smoke-2-after-tap.png
+            adb logcat -d > logcat.txt
+            if grep -q "FATAL EXCEPTION" logcat.txt; then grep -A 30 "FATAL EXCEPTION" logcat.txt; exit 1; fi
+            adb shell pidof com.tylerhill.shoo
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-smoke
+          path: |
+            smoke-*.png
+            logcat.txt
+
   ios:
     # Compiles the iPhone app on every change, no Apple account needed, and
     # publishes an unsigned .ipa (for Sideloadly) next to the APK.

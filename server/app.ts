@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { LatLng, TravelMode } from '../src/core/types';
 import { CalendarError, fetchCalendar, resolveHost, type Resolve } from './calendar';
 import { cors, rateLimit, requirePasscode } from './guards';
-import { geocode, route, type Fetch, type ProviderEnv } from './providers';
+import { geocode, route, type Fetch, type ProviderEnv } from '../src/providers';
 
 export interface AppEnv extends ProviderEnv {
   APP_PASSCODE?: string;

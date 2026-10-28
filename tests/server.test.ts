@@ -2,7 +2,7 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../server/app';
 import { isPrivate } from '../server/calendar';
-import type { Fetch } from '../server/providers';
+import type { Fetch } from '../src/providers';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });

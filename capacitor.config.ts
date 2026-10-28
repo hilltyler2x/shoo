@@ -9,6 +9,13 @@ const config: CapacitorConfig = {
   ios: {
     contentInset: 'never',
   },
+  plugins: {
+    // Native networking for fetch: lets the app read calendars and call the free
+    // map services directly, without the browser's cross-site limits.
+    CapacitorHttp: { enabled: true },
+    // Android: edge to edge, with the safe areas passed to CSS as --safe-area-inset-*.
+    SystemBars: { insetsHandling: 'css', initialViewportFitValueHint: 'cover' },
+  },
 };
 
 export default config;

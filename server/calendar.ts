@@ -1,6 +1,6 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
-import type { Fetch } from './providers';
+import type { Fetch } from '../src/providers';
 
 const MAX_BYTES = 3 * 1024 * 1024;
 const MAX_REDIRECTS = 3;

@@ -2,7 +2,7 @@
 // Android projects need. Web icons already live in public/icons/.
 // Run with: npm run icons  (uses the Playwright Chromium installed on the machine)
 import { execSync } from 'node:child_process';
-import { copyFileSync, readFileSync } from 'node:fs';
+import { copyFileSync, readFileSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
 // Playwright is installed globally on the dev machine, not as a project dependency.
@@ -40,5 +40,42 @@ for (const [path, size, art, round] of jobs) {
   );
   await page.screenshot({ path: `${root}${path}`, omitBackground: true });
 }
-console.log(`wrote ${jobs.length + 1} icons`);
+// Splash screens: the clock on the orange gradient, with the name under it.
+// Each existing splash file keeps its size (read from the PNG header).
+const pngSize = (path) => {
+  const b = readFileSync(path);
+  return [b.readUInt32BE(16), b.readUInt32BE(20)];
+};
+const splashes = [
+  ...readdirSync(`${root}${res}`)
+    .filter((d) => d.startsWith('drawable'))
+    .map((d) => `${res}/${d}/splash.png`)
+    .filter((p) => {
+      try {
+        readFileSync(`${root}${p}`);
+        return true;
+      } catch {
+        return false;
+      }
+    }),
+  ...readdirSync(`${root}ios/App/App/Assets.xcassets/Splash.imageset`)
+    .filter((f) => f.endsWith('.png'))
+    .map((f) => `ios/App/App/Assets.xcassets/Splash.imageset/${f}`),
+];
+for (const path of splashes) {
+  const [w, h] = pngSize(`${root}${path}`);
+  const art = Math.round(Math.min(w, h) * 0.42);
+  const font = Math.round(art * 0.26);
+  await page.setViewportSize({ width: w, height: h });
+  await page.setContent(
+    `<body style="margin:0;width:${w}px;height:${h}px;background:linear-gradient(135deg,#ff8a3d,#ff4d2e);` +
+      `display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:system-ui,sans-serif">` +
+      foreground.replace(/<svg([^>]*?)\swidth="\d+"\sheight="\d+"/, '<svg$1').replace('<svg ', `<svg width="${art}" height="${art}" `) +
+      `<div style="color:#fff;font-weight:900;font-size:${font}px;letter-spacing:-1px;margin-top:${Math.round(font * -0.2)}px">Shoo</div>` +
+      '</body>',
+  );
+  await page.screenshot({ path: `${root}${path}` });
+}
+
+console.log(`wrote ${jobs.length + 1} icons and ${splashes.length} splash screens`);
 await browser.close();

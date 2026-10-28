@@ -1,7 +1,35 @@
 import type { LatLng, Place, TravelEstimate, TravelMode } from './core/types';
+import { geocode as directGeocode, route as directRoute } from './providers';
 
-/** Empty on the website (same server). The phone apps set VITE_API_URL in .env.app. */
-const BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+/**
+ * Empty on the website served by Shoo's own server. The phone apps set the
+ * server's address in .env.app. "none" means there is no server (the GitHub
+ * Pages copy), so everything goes straight to the free map services.
+ */
+const API_URL = import.meta.env.VITE_API_URL ?? '';
+const SERVERLESS = API_URL === 'none';
+const BASE = SERVERLESS ? '' : API_URL.replace(/\/$/, '');
+
+/**
+ * When the server can't be reached (not set up yet, or down), Shoo still
+ * works: it calls the free routing and address services directly (no live
+ * traffic) and reads calendars itself. On the phone apps CapacitorHttp lets
+ * those calls skip the browser's cross-site rules.
+ */
+const DIRECT = { sendUserAgent: false } as const;
+const RETRY_SERVER_AFTER_MS = 10 * 60_000;
+let serverDownUntil = 0;
+
+async function viaServer<T>(server: () => Promise<T>, direct: () => Promise<T>): Promise<T> {
+  if (SERVERLESS || Date.now() < serverDownUntil) return direct();
+  try {
+    return await server();
+  } catch (err) {
+    if (err instanceof PasscodeError) throw err;
+    serverDownUntil = Date.now() + RETRY_SERVER_AFTER_MS;
+    return direct();
+  }
+}
 
 export class PasscodeError extends Error {}
 export class ApiError extends Error {}
@@ -29,7 +57,7 @@ export function setPasscode(value: string) {
 }
 
 /** Keep retrying for this long while the server boots (Render's cold start is about a minute). */
-const WAKE_BUDGET_MS = 120_000;
+const WAKE_BUDGET_MS = 75_000;
 
 async function call(path: string, init: RequestInit = {}): Promise<Response> {
   const started = Date.now();
@@ -65,23 +93,55 @@ async function call(path: string, init: RequestInit = {}): Promise<Response> {
   }
 }
 
+const NO_SERVER = { ok: false, passcodeRequired: false, routing: 'direct' };
+
 export async function health(): Promise<{ ok: boolean; passcodeRequired: boolean; routing: string }> {
-  return (await call('/api/health')).json();
+  if (SERVERLESS) return NO_SERVER;
+  try {
+    const body = await (await call('/api/health')).json();
+    if (body?.ok) return body;
+  } catch {
+    // fall through
+  }
+  serverDownUntil = Date.now() + RETRY_SERVER_AFTER_MS;
+  return NO_SERVER;
 }
 
 export async function checkPasscode(): Promise<void> {
+  if (SERVERLESS || Date.now() < serverDownUntil) return;
   await call('/api/passcode', { method: 'POST' });
 }
 
-export async function searchPlaces(q: string): Promise<Place[]> {
-  return (await (await call(`/api/geocode?q=${encodeURIComponent(q)}`)).json()).places;
+export function searchPlaces(q: string): Promise<Place[]> {
+  return viaServer(
+    async () => (await (await call(`/api/geocode?q=${encodeURIComponent(q)}`)).json()).places,
+    () => directGeocode(DIRECT, fetch, q),
+  );
 }
 
-export async function travelTime(from: LatLng, to: LatLng, mode: TravelMode, departAt?: number): Promise<TravelEstimate> {
-  const res = await call('/api/route', { method: 'POST', body: JSON.stringify({ from, to, mode, departAt }) });
-  return res.json();
+export function travelTime(from: LatLng, to: LatLng, mode: TravelMode, departAt?: number): Promise<TravelEstimate> {
+  return viaServer(
+    async () =>
+      (await call('/api/route', { method: 'POST', body: JSON.stringify({ from, to, mode, departAt }) })).json(),
+    () => directRoute(DIRECT, fetch, from, to, mode, departAt),
+  );
 }
 
-export async function fetchCalendar(url: string): Promise<string> {
-  return (await call(`/api/calendar?url=${encodeURIComponent(url)}`)).text();
+export function fetchCalendar(url: string): Promise<string> {
+  return viaServer(
+    async () => (await call(`/api/calendar?url=${encodeURIComponent(url)}`)).text(),
+    async () => {
+      let res: Response;
+      try {
+        res = await fetch(url.trim().replace(/^webcals?:\/\//i, 'https://'), { signal: AbortSignal.timeout(15_000) });
+      } catch {
+        // Browsers block most calendar hosts from being read by other sites. The phone apps aren't limited.
+        throw new ApiError("Couldn't read that calendar here. It works in the phone app, or once Shoo's server is online.");
+      }
+      if (!res.ok) throw new ApiError(`The calendar address answered ${res.status}.`);
+      const text = await res.text();
+      if (!text.includes('BEGIN:VCALENDAR')) throw new ApiError("That address isn't an iCal calendar.");
+      return text;
+    },
+  );
 }

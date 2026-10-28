@@ -24,7 +24,7 @@ export function App() {
   return (
     <div className="shell">
       <header className="topbar">
-        <img className="logo-mark" src="/icons/favicon.svg" alt="" width="34" height="34" />
+        <img className="logo-mark" src={`${import.meta.env.BASE_URL}icons/favicon.svg`} alt="" width="34" height="34" />
         <span className="logo">Shoo</span>
         <span className="tagline">Never be late.</span>
       </header>

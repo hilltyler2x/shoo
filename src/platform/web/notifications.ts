@@ -37,7 +37,8 @@ export class WebNotifications implements NotificationPort {
 
   async showNow(title: string, body: string): Promise<void> {
     if ((await this.permission()) !== 'granted') return;
-    const options = { body, icon: '/icons/icon-192.png', badge: '/icons/icon-192.png', tag: 'shoo' };
+    const icon = `${import.meta.env.BASE_URL}icons/icon-192.png`;
+    const options = { body, icon, badge: icon, tag: 'shoo' };
     // Android Chrome only allows notifications through the service worker.
     const reg = await navigator.serviceWorker?.getRegistration();
     if (reg) await reg.showNotification(title, options);
