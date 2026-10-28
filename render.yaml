@@ -1,0 +1,25 @@
+# Render Blueprint: one free web service that serves the website and the API.
+# Secrets marked `sync: false` are typed into Render's dashboard, never stored here.
+services:
+  - type: web
+    name: shoo
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # A passcode you make up. The app asks for it once.
+      - key: APP_PASSCODE
+        sync: false
+      # Optional. Adds live traffic. Without it Shoo uses free routing with no traffic.
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
+      # Optional. Sent to OpenStreetMap's free address search, as its rules ask.
+      - key: CONTACT_EMAIL
+        sync: false
+      - key: RATE_LIMIT_PER_HOUR
+        value: "300"

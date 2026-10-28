@@ -1,0 +1,180 @@
+# Builds the phone apps.
+#  - android: a test APK on the "test-build" release, at a link that never changes:
+#    https://github.com/<you>/<repo>/releases/download/test-build/Shoo-test.apk
+#  - ios: compiles the iPhone app and publishes an unsigned .ipa for Sideloadly
+#  - testflight: archives the iPhone app on GitHub's Mac machines and uploads it
+#    to TestFlight. Skips itself until the four Apple secrets are added.
+name: Build apps
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Runs on main queue up instead of overlapping (both would replace the same
+# release files). Older runs on a pull request are cancelled.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - run: npm ci
+      - run: npm run build:app
+      - name: Build test APK
+        working-directory: android
+        run: ./gradlew assembleDebug -PversionCode=${{ github.run_number }} --no-daemon
+      - run: cp android/app/build/outputs/apk/debug/app-debug.apk Shoo-test.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Shoo-test-apk
+          path: Shoo-test.apk
+      - name: Publish to the test-build release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view test-build >/dev/null 2>&1; then
+            gh release create test-build --prerelease --title "Test build" \
+              --notes "Latest test build from main. Uninstall the old Shoo before installing a new one." || true
+          fi
+          gh release upload test-build Shoo-test.apk --clobber
+
+  ios:
+    # Compiles the iPhone app on every change, no Apple account needed, and
+    # publishes an unsigned .ipa (for Sideloadly) next to the APK.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:app
+      - name: Build (unsigned)
+        run: |
+          xcodebuild build \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }}
+      - name: Package unsigned .ipa
+        run: |
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$RUNNER_TEMP/dd/Build/Products/Release-iphoneos/App.app" "$RUNNER_TEMP/ipa/Payload/"
+          (cd "$RUNNER_TEMP/ipa" && zip -qr "$GITHUB_WORKSPACE/Shoo-unsigned.ipa" Payload)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Shoo-unsigned-ipa
+          path: Shoo-unsigned.ipa
+      - name: Publish to the test-build release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view test-build >/dev/null 2>&1; then
+            gh release create test-build --prerelease --title "Test build" \
+              --notes "Latest test build from main. Uninstall the old Shoo before installing a new one." || true
+          fi
+          gh release upload test-build Shoo-unsigned.ipa --clobber
+
+  testflight:
+    # App Store Connect only accepts builds from Xcode 26 (iOS 26 SDK) or newer.
+    runs-on: macos-26
+    if: github.event_name != 'pull_request'
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+    steps:
+      - name: Check Apple secrets
+        id: secrets
+        run: |
+          if [ -z "$APPLE_TEAM_ID" ] || [ -z "$ASC_KEY_ID" ] || [ -z "$ASC_ISSUER_ID" ] || [ -z "$ASC_KEY_P8" ]; then
+            echo "::notice title=TestFlight skipped::Add APPLE_TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 in Settings → Secrets and variables → Actions to upload iPhone builds."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.secrets.outputs.ready == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.secrets.outputs.ready == 'true'
+        with:
+          node-version: 22
+          cache: npm
+      - name: Build the web app into the iPhone project
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          npm ci
+          npm run build:app
+      - name: Write the App Store Connect key
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          KEY="$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
+          printf '%s\n' "$ASC_KEY_P8" > "$KEY"
+          echo "ASC_KEY_PATH=$KEY" >> "$GITHUB_ENV"
+      - name: Archive
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          xcodebuild archive \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Shoo.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }}
+      - name: Upload to TestFlight
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Shoo.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+      - name: Remove the key
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/AuthKey_*.p8
