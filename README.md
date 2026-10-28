@@ -80,7 +80,7 @@ Connect record exactly).
   (at `releases/download/test-build/Shoo-test.apk`) and uploads the iPhone app
   to TestFlight from a `macos-26` runner once the four Apple secrets exist:
   `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`.
-- `npm run icons` re-renders every icon from `public/icon.svg`.
+- `npm run icons` renders the iPhone and Android icons from the Dashing Clock in `resources/` (web icons are in `public/icons/`).
 
 ## Deploy
 

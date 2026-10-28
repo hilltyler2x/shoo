@@ -60,9 +60,14 @@ body {
   flex: none;
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  gap: 8px;
   padding: calc(env(safe-area-inset-top) + 12px) calc(env(safe-area-inset-right) + 16px) 10px
     calc(env(safe-area-inset-left) + 16px);
+}
+
+.logo-mark {
+  align-self: center;
+  border-radius: 9px;
 }
 
 .logo {

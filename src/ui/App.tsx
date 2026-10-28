@@ -24,6 +24,7 @@ export function App() {
   return (
     <div className="shell">
       <header className="topbar">
+        <img className="logo-mark" src="/icons/favicon.svg" alt="" width="34" height="34" />
         <span className="logo">Shoo</span>
         <span className="tagline">Never be late.</span>
       </header>
