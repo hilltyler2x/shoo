@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff8a3d"/><stop offset="1" stop-color="#ff4d2e"/></linearGradient></defs>
+  <rect width="1024" height="1024" fill="url(#g)"/>
+
+  <!-- Dashing Clock: speed lines, sprinting alarm clock stuck at 8:59, sweat drop -->
+  <g stroke="#ffffff" stroke-width="44" stroke-linecap="round" opacity=".9">
+    <line x1="100" y1="410" x2="245" y2="410"/>
+    <line x1="70" y1="515" x2="235" y2="515"/>
+    <line x1="110" y1="620" x2="245" y2="620"/>
+  </g>
+  <g transform="rotate(14 540 500)">
+    <g stroke="#1e1b2e" stroke-width="50" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <path d="M470 730 L400 830 L335 842"/>
+      <path d="M610 730 L680 810 L765 792"/>
+    </g>
+    <ellipse cx="318" cy="848" rx="66" ry="36" fill="#1e1b2e"/>
+    <ellipse cx="790" cy="788" rx="66" ry="36" fill="#1e1b2e"/>
+    <circle cx="395" cy="270" r="78" fill="#1e1b2e"/>
+    <circle cx="685" cy="270" r="78" fill="#1e1b2e"/>
+    <rect x="518" y="186" width="44" height="74" rx="16" fill="#1e1b2e"/>
+    <circle cx="540" cy="500" r="250" fill="#ffffff" stroke="#1e1b2e" stroke-width="42"/>
+    <g fill="#1e1b2e">
+      <circle cx="540" cy="302" r="16"/><circle cx="738" cy="500" r="16"/>
+      <circle cx="540" cy="698" r="16"/><circle cx="342" cy="500" r="16"/>
+    </g>
+    <g stroke="#1e1b2e" stroke-linecap="round">
+      <line x1="540" y1="500" x2="528" y2="345" stroke-width="34"/>
+      <line x1="540" y1="500" x2="420" y2="508" stroke-width="42"/>
+    </g>
+    <circle cx="540" cy="500" r="30" fill="#ff4d2e"/>
+  </g>
+  <path d="M845 230 C 808 292 795 328 795 352 A50 50 0 0 0 895 352 C 895 328 882 292 845 230 Z" fill="#7fd6ff" stroke="#1e1b2e" stroke-width="20" stroke-linejoin="round"/>
+</svg>
