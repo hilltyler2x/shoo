@@ -1,0 +1,57 @@
+# Store uploads, run by .github/workflows/store.yml (not by hand).
+# Text and pictures live next to this file: metadata/ (Apple), metadata/android/
+# (Google Play) and screenshots/ (Apple). `npm run screenshots` re-renders them.
+
+default_platform(:ios)
+
+platform :ios do
+  # Uploads the App Store listing, and with SUBMIT=true sends the newest
+  # TestFlight build to App Review (released automatically once approved).
+  lane :listing do
+    app_store_connect_api_key(
+      key_id: ENV.fetch('ASC_KEY_ID'),
+      issuer_id: ENV.fetch('ASC_ISSUER_ID'),
+      key_content: ENV.fetch('ASC_KEY_P8'),
+    )
+    submit = ENV['SUBMIT'] == 'true'
+    deliver(
+      app_identifier: 'com.tylerhill.shoo',
+      app_version: ENV.fetch('APP_VERSION', '1.0'),
+      platform: 'ios',
+      metadata_path: 'fastlane/metadata',
+      screenshots_path: 'fastlane/screenshots',
+      skip_binary_upload: true,
+      overwrite_screenshots: true,
+      force: true,
+      run_precheck_before_submit: false,
+      submit_for_review: submit,
+      automatic_release: true,
+      reject_if_possible: submit,
+      submission_information: {
+        add_id_info_uses_idfa: false,
+        export_compliance_uses_encryption: false,
+        content_rights_contains_third_party_content: false,
+      },
+    )
+  end
+end
+
+platform :android do
+  # Uploads the Google Play listing. With TRACK set (alpha = closed testing,
+  # production), also moves the newest internal-testing build to that track.
+  lane :listing do
+    track = ENV['TRACK'].to_s
+    supply(
+      package_name: 'com.tylerhill.shoo',
+      json_key_data: ENV.fetch('PLAY_SERVICE_ACCOUNT_JSON'),
+      metadata_path: 'fastlane/metadata/android',
+      track: 'internal',
+      track_promote_to: track.empty? ? nil : track,
+      track_promote_release_status: ENV.fetch('PLAY_RELEASE_STATUS', 'completed'),
+      release_status: ENV.fetch('PLAY_RELEASE_STATUS', 'completed'),
+      skip_upload_apk: true,
+      skip_upload_aab: true,
+      skip_upload_changelogs: track.empty?,
+    )
+  end
+end

@@ -111,3 +111,19 @@ in `src/core/pro.ts`; purchases go through RevenueCat
 Pro switches on only when `VITE_REVENUECAT_IOS_KEY` / `VITE_REVENUECAT_ANDROID_KEY`
 are set in `.env.app` (RevenueCat's public SDK keys). Until then, and always on
 the website, everything is unlocked.
+
+## Publishing to the App Store and Google Play
+
+- **Builds** (`build.yml`, on every merge to `main`): the iPhone app goes to
+  TestFlight; the signed Android bundle goes to the `store-build` release and
+  Play's internal testing track. Secrets: `APPLE_TEAM_ID`, `ASC_KEY_ID`,
+  `ASC_ISSUER_ID`, `ASC_KEY_P8` (Apple); `ANDROID_KEYSTORE_BASE64`,
+  `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `PLAY_SERVICE_ACCOUNT_JSON` (Google).
+- **Listings and release** (`store.yml`, run by hand: Actions → Publish to
+  stores): uploads the text and screenshots in `fastlane/`, and can submit the
+  newest build to App Review or move it to Play's closed testing / production.
+- Privacy policy and support pages: `public/privacy.html`, `public/support.html`
+  (served by GitHub Pages). Store privacy answers: `store/privacy-labels.md`.
+- Store apps never show the server passcode lock: if the server asks for one,
+  they skip it and call the map services directly. Leave `APP_PASSCODE` unset on
+  Render once the apps are public.

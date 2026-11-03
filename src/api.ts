@@ -8,6 +8,8 @@ import { geocode as directGeocode, route as directRoute } from './providers';
  */
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 const SERVERLESS = API_URL === 'none';
+/** The iPhone and Android builds (`vite build --mode app`). */
+const STORE_APP = import.meta.env.MODE === 'app';
 const BASE = SERVERLESS ? '' : API_URL.replace(/\/$/, '');
 
 /**
@@ -99,6 +101,12 @@ export async function health(): Promise<{ ok: boolean; passcodeRequired: boolean
   if (SERVERLESS) return NO_SERVER;
   try {
     const body = await (await call('/api/health')).json();
+    // The store apps never show a passcode lock (App Review and the public
+    // can't know it): if the server wants one, they skip it and go direct.
+    if (body?.ok && body.passcodeRequired && STORE_APP) {
+      serverDownUntil = Number.POSITIVE_INFINITY;
+      return NO_SERVER;
+    }
     if (body?.ok) return body;
   } catch {
     // fall through

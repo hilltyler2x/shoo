@@ -1,0 +1,66 @@
+# Sends Shoo to the stores. Run it from Actions → "Publish to stores" → Run workflow.
+#  - apple: "listing" uploads the App Store text and screenshots; "submit" also
+#    sends the newest TestFlight build to App Review.
+#  - google: "listing" uploads the Play text and pictures; "closed-test" or
+#    "production" also moves the newest internal-testing build there.
+# Uses the same secrets as build.yml (Apple: ASC_*; Google: PLAY_SERVICE_ACCOUNT_JSON).
+name: Publish to stores
+
+on:
+  workflow_dispatch:
+    inputs:
+      apple:
+        description: App Store
+        type: choice
+        options: [listing, submit, skip]
+        default: listing
+      google:
+        description: Google Play
+        type: choice
+        options: [listing, closed-test, production, skip]
+        default: listing
+
+permissions:
+  contents: read
+
+jobs:
+  apple:
+    if: inputs.apple != 'skip'
+    runs-on: macos-26
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+      SUBMIT: ${{ inputs.apple == 'submit' }}
+    steps:
+      - name: Check Apple secrets
+        run: |
+          if [ -z "$ASC_KEY_ID" ] || [ -z "$ASC_ISSUER_ID" ] || [ -z "$ASC_KEY_P8" ]; then
+            echo "::error::Add ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 in Settings → Secrets and variables → Actions."; exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+      - run: gem install fastlane --no-document
+      - run: fastlane ios listing
+
+  google:
+    if: inputs.google != 'skip'
+    runs-on: ubuntu-latest
+    env:
+      PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+      TRACK: ${{ inputs.google == 'closed-test' && 'alpha' || inputs.google == 'production' && 'production' || '' }}
+      PLAY_RELEASE_STATUS: ${{ vars.PLAY_RELEASE_STATUS || 'draft' }}
+    steps:
+      - name: Check Google secret
+        run: |
+          if [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
+            echo "::error::Add PLAY_SERVICE_ACCOUNT_JSON in Settings → Secrets and variables → Actions."; exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+      - run: gem install fastlane --no-document
+      - run: fastlane android listing

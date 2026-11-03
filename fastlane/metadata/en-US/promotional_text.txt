@@ -1,0 +1,1 @@
+Shoo works out when you have to walk out the door, checks traffic, and sends funnier, louder nags the longer you sit there. When you leave, it backs off.
