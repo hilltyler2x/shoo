@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => ({
       manifest: {
         name: 'Shoo: Never Be Late.',
         short_name: 'Shoo',
-        description: 'Knows when you need to leave for work, and nags you until you do.',
+        description: 'Knows when you need to leave for anything on your calendar, and nags you until you do.',
         theme_color: '#ff5a32',
         background_color: '#fff8f0',
         display: 'standalone',
@@ -33,6 +33,8 @@ export default defineConfig(({ mode }) => ({
       },
       workbox: {
         navigateFallbackDenylist: [/^\/api\//],
+        // The screenshot reader is big and rarely used: fetched when needed, not installed up front.
+        globIgnores: ['ocr/**'],
       },
     }),
   ],

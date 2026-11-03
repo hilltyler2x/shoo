@@ -2,7 +2,7 @@ import { InAppReview } from '@capacitor-community/in-app-review';
 import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import type { LatLng } from '../../core/types';
-import type { LocationPort, NotificationPort, ReviewPort, TripPort } from '../ports';
+import type { DeviceCalendarPort, LocationPort, NotificationPort, ReviewPort, TripPort } from '../ports';
 import { ShooNative } from './shooNative';
 
 export const nativeNotifications: NotificationPort = {
@@ -73,4 +73,12 @@ export const nativeReviews: ReviewPort = {
       : APP_STORE_ID
         ? `itms-apps://itunes.apple.com/app/id${APP_STORE_ID}?action=write-review`
         : null,
+};
+
+export const nativeDeviceCalendar: DeviceCalendarPort = {
+  available: true,
+  reminders: Capacitor.getPlatform() === 'ios',
+  permission: () => ShooNative.calendarStatus(),
+  request: async (which) => (await ShooNative.requestCalendar({ which })).state,
+  events: async (from, to) => (await ShooNative.calendarEvents({ from, to })).events,
 };

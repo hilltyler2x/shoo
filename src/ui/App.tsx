@@ -1,21 +1,24 @@
 import { useEffect, useState } from 'react';
 import { platform } from '../platform';
+import { Plans } from './Plans';
 import { Setup } from './Setup';
-import { Shifts } from './Shifts';
 import { Today } from './Today';
 import { useShoo } from './useShoo';
 
-type Tab = 'today' | 'shifts' | 'setup';
+type Tab = 'today' | 'plans' | 'setup';
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'today', label: 'Today', icon: '⏰' },
-  { id: 'shifts', label: 'Shifts', icon: '📅' },
+  { id: 'plans', label: 'Plans', icon: '📅' },
   { id: 'setup', label: 'Setup', icon: '⚙️' },
 ];
 
 export function App() {
   const shoo = useShoo();
-  const [tab, setTab] = useState<Tab>(() => platform.storage.load('tab', 'today'));
+  const [tab, setTab] = useState<Tab>(() => {
+    const saved = platform.storage.load<string>('tab', 'today');
+    return saved === 'shifts' ? 'plans' : (saved as Tab);
+  });
   useEffect(() => platform.storage.save('tab', tab), [tab]);
 
   const locked = shoo.passcodeRequired && !shoo.passcodeOk;
@@ -32,7 +35,7 @@ export function App() {
       {locked && <div className="banner">Enter the passcode to unlock Shoo.</div>}
       <main className="content">
         {shown === 'today' && <Today shoo={shoo} goTo={setTab} />}
-        {shown === 'shifts' && <Shifts shoo={shoo} />}
+        {shown === 'plans' && <Plans shoo={shoo} />}
         {shown === 'setup' && <Setup shoo={shoo} />}
       </main>
       <nav className="tabbar" aria-label="Sections">

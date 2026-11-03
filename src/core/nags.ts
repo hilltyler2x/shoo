@@ -1,5 +1,5 @@
 import type { LeavePlan } from './leavePlan';
-import { TIER_TITLES, usableMessages, type MessageContext } from './messages';
+import { TIER_TITLES, usableMessages, type MessageContext, type Occasion } from './messages';
 import { MINUTE } from './time';
 import type { NagTier, ScheduledNag } from './types';
 
@@ -13,6 +13,9 @@ export interface NagOptions {
   /** iOS keeps at most 64 pending local notifications per app, shared across shifts. */
   maxPerShift: number;
   trafficAware: boolean;
+  /** Where you're going, for the messages. */
+  where: string;
+  occasion: Occasion;
 }
 
 export const DEFAULT_NAG_OPTIONS: NagOptions = {
@@ -21,6 +24,8 @@ export const DEFAULT_NAG_OPTIONS: NagOptions = {
   panicAfterStart: 10,
   maxPerShift: 15,
   trafficAware: false,
+  where: 'Work',
+  occasion: 'work',
 };
 
 /**
@@ -52,7 +57,7 @@ export function buildNagSchedule(
   const nags: ScheduledNag[] = [];
   const add = (tier: NagTier, times: number[], lastLine?: 'last') => {
     times.forEach((at, i) => {
-      const ctx = contextAt(at, plan, opts.trafficAware);
+      const ctx = contextAt(at, plan, opts.trafficAware, opts.where, opts.occasion);
       const lines = usableMessages(tier, ctx);
       const isLast = lastLine && i === times.length - 1;
       // Panic always ends on the final line, so cycle through the others first.
@@ -68,8 +73,16 @@ export function buildNagSchedule(
   return nags.slice(0, opts.maxPerShift);
 }
 
-export function contextAt(at: number, plan: LeavePlan, trafficAware: boolean): MessageContext {
+export function contextAt(
+  at: number,
+  plan: LeavePlan,
+  trafficAware: boolean,
+  where = DEFAULT_NAG_OPTIONS.where,
+  occasion: Occasion = DEFAULT_NAG_OPTIONS.occasion,
+): MessageContext {
   return {
+    where,
+    occasion,
     travel: plan.travelMinutes,
     untilStart: Math.max(0, Math.round((plan.shiftStart - at) / MINUTE)),
     leaveIn: Math.max(0, Math.round((plan.leaveAt - at) / MINUTE)),

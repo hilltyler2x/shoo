@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeLeavePlan } from '../src/core/leavePlan';
-import { MESSAGES } from '../src/core/messages';
+import { detectOccasion, OCCASIONS } from '../src/core/messages';
 import { buildNagSchedule, pendingNags } from '../src/core/nags';
 
 const at = (h: number, m: number) => new Date(2026, 9, 26, h, m).getTime();
@@ -40,7 +40,7 @@ describe('buildNagSchedule', () => {
   });
 
   it('opens with the shoes line and ends on LEAVE', () => {
-    expect(nags[0].body).toBe(MESSAGES.gentle[0].text);
+    expect(nags[0].body).toBe('Hey, you might wanna start putting your shoes on 👟');
     expect(nags.at(-1)!.body).toMatch(/LEAVE\.$/);
     expect(nags.find((n) => n.tier === 'serious')!.body).toBe('Shoo. Shoo. SHOO. 🚪');
   });
@@ -78,5 +78,31 @@ describe('buildNagSchedule', () => {
 
   it('pendingNags drops the ones already sent', () => {
     expect(pendingNags(nags, at(8, 30)).every((n) => n.at > at(8, 30))).toBe(true);
+  });
+});
+
+describe('occasions', () => {
+  it('spots the occasion from the title, then the place', () => {
+    expect(detectOccasion('Dentist cleaning')).toBe('dentist');
+    expect(detectOccasion('Flight to Denver')).toBe('flight');
+    expect(detectOccasion('Dinner w/ Sam')).toBe('dinner');
+    expect(detectOccasion('Pick up Mia')).toBe('pickup');
+    expect(detectOccasion('Job interview at Acme')).toBe('interview');
+    expect(detectOccasion('Leg day', 'Planet Fitness')).toBe('gym');
+    expect(detectOccasion('Thing', 'AUS', 'airport')).toBe('flight');
+    expect(detectOccasion('Update the doc')).toBe('other');
+  });
+
+  it('every occasion gets its own lines in every tier', () => {
+    const plan = computeLeavePlan({ shiftStart: at(9, 0), travelMinutes: 20, prepMinutes: 10, arriveEarlyMinutes: 20 });
+    for (const occasion of Object.keys(OCCASIONS) as (keyof typeof OCCASIONS)[]) {
+      const bodies = buildNagSchedule('x', plan, { occasion, where: 'The Spot' }).map((n) => n.body);
+      expect(bodies).toContain(OCCASIONS[occasion].serious[0]);
+      expect(bodies).toContain(OCCASIONS[occasion].panic[0]);
+      expect(bodies.at(-1)).toMatch(/LEAVE\.$/);
+      expect(bodies.join(' ')).not.toMatch(/[{}]/);
+    }
+    const gym = buildNagSchedule('x', plan, { occasion: 'gym' }).map((n) => n.body).join(' ');
+    expect(gym).not.toMatch(/manager|coworker/);
   });
 });

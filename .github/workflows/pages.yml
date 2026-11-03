@@ -46,7 +46,7 @@ jobs:
         if: steps.pages.outputs.on == 'true'
       - name: Build for /shoo/ with no server
         if: steps.pages.outputs.on == 'true'
-        run: npx tsc -b && npx vite build
+        run: npm run build
         env:
           PAGES_BASE: /shoo/
           VITE_API_URL: none
