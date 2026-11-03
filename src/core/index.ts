@@ -8,3 +8,5 @@ export * from './ics';
 export * from './shifts';
 export * from './trip';
 export * from './reviews';
+export * from './places';
+export * from './schedule';

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { TravelMode } from '../core';
+import { PLACE_KINDS, type Place, type PlaceKind, type SavedPlace, type TravelMode } from '../core';
 import { PlaceSearch } from './PlaceSearch';
 import type { ShooState } from './useShoo';
 
@@ -15,14 +15,10 @@ export function Setup({ shoo }: { shoo: ShooState }) {
 
   return (
     <div className="stack">
+      <Places places={settings.places} onChange={(places) => update({ places })} />
+
       <section className="card">
-        <h2>Where's work?</h2>
-        <PlaceSearch
-          label="Job location"
-          value={settings.job}
-          onChange={(job) => update({ job })}
-          hereLabel="I'm at work right now"
-        />
+        <h2>Where do you usually leave from?</h2>
         <PlaceSearch
           label="Home (used when location is off)"
           value={settings.home}
@@ -55,7 +51,7 @@ export function Setup({ shoo }: { shoo: ShooState }) {
         />
         <Stepper
           label="Get there early by"
-          hint="Parking, clocking in, saying hi"
+          hint="Parking, finding the door, saying hi. Airports get 90 min on their own."
           value={settings.arriveEarlyMinutes}
           onChange={(arriveEarlyMinutes) => update({ arriveEarlyMinutes })}
         />
@@ -101,6 +97,90 @@ export function Setup({ shoo }: { shoo: ShooState }) {
   );
 }
 
+const KIND_ORDER = Object.keys(PLACE_KINDS) as PlaceKind[];
+const newId = () => Math.random().toString(36).slice(2, 10);
+
+function Places({ places, onChange }: { places: SavedPlace[]; onChange: (places: SavedPlace[]) => void }) {
+  const [adding, setAdding] = useState(places.length === 0);
+  const [kind, setKind] = useState<PlaceKind>(places.some((p) => p.kind === 'work') ? 'gym' : 'work');
+  const [name, setName] = useState('');
+  const [where, setWhere] = useState<Place | null>(null);
+
+  const save = () => {
+    if (!where) return;
+    const label = name.trim() || PLACE_KINDS[kind].label;
+    onChange([...places, { ...where, id: newId(), name: label, kind }]);
+    setName('');
+    setWhere(null);
+    setAdding(false);
+  };
+
+  return (
+    <section className="card">
+      <h2>Your places</h2>
+      <p className="hint">
+        Save the spots you go to a lot. Calendar events at these places get matched automatically, and anything else
+        on your calendar with an address works too.
+      </p>
+      {places.length > 0 && (
+        <ul className="shift-list">
+          {places.map((p) => (
+            <li key={p.id}>
+              <div>
+                <strong>
+                  {PLACE_KINDS[p.kind]?.icon ?? '📍'} {p.name}
+                </strong>
+                <div className="hint">{p.label}</div>
+              </div>
+              <button className="link danger" onClick={() => onChange(places.filter((x) => x.id !== p.id))}>
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {adding ? (
+        <>
+          <div className="kinds" role="radiogroup" aria-label="What kind of place">
+            {KIND_ORDER.map((k) => (
+              <button
+                key={k}
+                type="button"
+                role="radio"
+                aria-checked={kind === k}
+                className={`kind ${kind === k ? 'on' : ''}`}
+                onClick={() => setKind(k)}
+              >
+                <span aria-hidden="true">{PLACE_KINDS[k].icon}</span>
+                {PLACE_KINDS[k].label}
+              </button>
+            ))}
+          </div>
+          <label className="field">
+            <span className="field-label">Name</span>
+            <input value={name} placeholder={PLACE_KINDS[kind].label} onChange={(e) => setName(e.target.value)} />
+          </label>
+          <PlaceSearch label="Where is it?" value={where} onChange={setWhere} hereLabel="I'm here right now" />
+          <div className="row">
+            <button className="btn" disabled={!where} onClick={save}>
+              Save place
+            </button>
+            {places.length > 0 && (
+              <button className="link" onClick={() => setAdding(false)}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </>
+      ) : (
+        <button className="btn" onClick={() => setAdding(true)}>
+          Add a place
+        </button>
+      )}
+    </section>
+  );
+}
+
 function BackgroundLocation({ shoo }: { shoo: ShooState }) {
   const state = shoo.backgroundLocation;
   return (
@@ -114,7 +194,7 @@ function BackgroundLocation({ shoo }: { shoo: ShooState }) {
         <>
           <p className="hint">
             Set location to <strong>Always</strong> so Shoo can tell you've left and stop nagging, even when it's closed.
-            It only watches the areas around where you are and your job. Without it, tap "I've left" on a nag.
+            It only watches the areas around where you are and where you're headed. Without it, tap "I've left" on a nag.
           </p>
           {state === 'prompt' ? (
             <button className="btn" onClick={shoo.requestBackgroundLocation}>

@@ -1,6 +1,7 @@
 import Capacitor
 import UIKit
 import CoreLocation
+import EventKit
 import Foundation
 import UserNotifications
 
@@ -9,8 +10,8 @@ import UserNotifications
 // iOS won't let the app run on a timer, so instead:
 //  - every nag is handed to iOS ahead of time as a local notification
 //  - a geofence around where you are tells iOS to wake Shoo when you leave,
-//    and Shoo cancels the rest of that shift's nags
-//  - a geofence around work fires the "made it" notification
+//    and Shoo cancels the rest of that plan's nags
+//  - a geofence around where you're headed fires the "made it" notification
 //  - each nag has an "I've left" button that cancels the rest
 //
 // TripMonitor starts from AppDelegate so geofence events are handled even when
@@ -255,7 +256,12 @@ public class ShooNativePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "clearTrip", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "markLeft", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "takeTripEvents", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "calendarStatus", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "requestCalendar", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "calendarEvents", returnType: CAPPluginReturnPromise),
     ]
+
+    private let eventStore = EKEventStore()
 
     override public func load() {
         NotificationCenter.default.addObserver(
@@ -372,6 +378,96 @@ public class ShooNativePlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func takeTripEvents(_ call: CAPPluginCall) {
         call.resolve(["events": TripMonitor.shared.takeEvents()])
+    }
+
+    // MARK: Calendar and Reminders (read-only)
+
+    private static func accessState(_ type: EKEntityType) -> String {
+        let status = EKEventStore.authorizationStatus(for: type)
+        if #available(iOS 17.0, *) {
+            if status == .fullAccess { return "granted" }
+            if status == .writeOnly { return "denied" }
+        }
+        switch status {
+        case .authorized: return "granted"
+        case .denied, .restricted: return "denied"
+        default: return "prompt"
+        }
+    }
+
+    @objc func calendarStatus(_ call: CAPPluginCall) {
+        call.resolve(["calendar": Self.accessState(.event), "reminders": Self.accessState(.reminder)])
+    }
+
+    @objc func requestCalendar(_ call: CAPPluginCall) {
+        let type: EKEntityType = call.getString("which") == "reminders" ? .reminder : .event
+        let done: (Bool, Error?) -> Void = { _, _ in call.resolve(["state": Self.accessState(type)]) }
+        if #available(iOS 17.0, *) {
+            if type == .event { eventStore.requestFullAccessToEvents(completion: done) }
+            else { eventStore.requestFullAccessToReminders(completion: done) }
+        } else {
+            eventStore.requestAccess(to: type, completion: done)
+        }
+    }
+
+    /// Timed events and reminders between `from` and `to` (epoch ms), shaped like the app's CalendarEvent.
+    @objc func calendarEvents(_ call: CAPPluginCall) {
+        let from = Date(timeIntervalSince1970: (call.getDouble("from") ?? 0) / 1000)
+        let to = Date(timeIntervalSince1970: (call.getDouble("to") ?? 0) / 1000)
+        var out: [[String: Any]] = []
+        let lock = NSLock()
+        let group = DispatchGroup()
+
+        if Self.accessState(.event) == "granted" {
+            eventStore.refreshSourcesIfNecessary()
+            let predicate = eventStore.predicateForEvents(withStart: from, end: to, calendars: nil)
+            for event in eventStore.events(matching: predicate) where !event.isAllDay && event.status != .canceled {
+                var item: [String: Any] = [
+                    "uid": "\(event.calendarItemIdentifier)@\(Int(event.startDate.timeIntervalSince1970))",
+                    "title": event.title ?? "",
+                    "location": event.location ?? "",
+                    "start": event.startDate.timeIntervalSince1970 * 1000,
+                    "end": event.endDate.timeIntervalSince1970 * 1000,
+                ]
+                if let geo = event.structuredLocation?.geoLocation {
+                    item["lat"] = geo.coordinate.latitude
+                    item["lng"] = geo.coordinate.longitude
+                }
+                out.append(item)
+            }
+        }
+
+        if Self.accessState(.reminder) == "granted" {
+            group.enter()
+            let predicate = eventStore.predicateForIncompleteReminders(
+                withDueDateStarting: from, ending: to, calendars: nil)
+            eventStore.fetchReminders(matching: predicate) { reminders in
+                for reminder in reminders ?? [] {
+                    // Only reminders with a time of day: "call mom" on a date isn't a trip.
+                    guard let due = reminder.dueDateComponents, due.hour != nil,
+                          let start = Calendar.current.date(from: due) else { continue }
+                    let place = reminder.alarms?.compactMap(\.structuredLocation).first
+                    var item: [String: Any] = [
+                        "uid": "rem:\(reminder.calendarItemIdentifier)",
+                        "title": reminder.title ?? "",
+                        "location": reminder.location ?? place?.title ?? "",
+                        "start": start.timeIntervalSince1970 * 1000,
+                    ]
+                    if let geo = place?.geoLocation {
+                        item["lat"] = geo.coordinate.latitude
+                        item["lng"] = geo.coordinate.longitude
+                    }
+                    lock.lock()
+                    out.append(item)
+                    lock.unlock()
+                }
+                group.leave()
+            }
+        }
+
+        group.notify(queue: .main) {
+            call.resolve(["events": out])
+        }
     }
 }
 

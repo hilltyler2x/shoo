@@ -369,7 +369,9 @@ body {
   font-weight: 600;
 }
 
-input {
+input,
+select,
+textarea {
   font: inherit;
   font-size: 16px; /* below 16px iPhone zooms in on focus */
   padding: 11px 12px;
@@ -537,4 +539,75 @@ input {
 .help p {
   font-size: 14px;
   color: var(--muted);
+}
+
+.kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+
+.kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.kind.on {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 14%, var(--surface));
+  font-weight: 600;
+}
+
+.import-box {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.found {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+}
+
+.found li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 0;
+}
+
+.place-pick {
+  margin-top: 6px;
+  width: auto;
+  max-width: 100%;
+  min-height: 34px;
+  padding: 4px 10px;
+  color: var(--muted);
+}
+
+.sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.found input[type='checkbox'] {
+  width: auto;
+  min-height: 0;
+}
+
+.feed {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  margin-top: 4px;
 }

@@ -1,5 +1,5 @@
 import { Capacitor } from '@capacitor/core';
-import { nativeLocation, nativeNotifications, nativeReviews, nativeTrip } from './native';
+import { nativeDeviceCalendar, nativeLocation, nativeNotifications, nativeReviews, nativeTrip } from './native';
 import type { Platform } from './ports';
 import { WebLocation } from './web/location';
 import { WebNotifications } from './web/notifications';
@@ -16,6 +16,7 @@ export const platform: Platform = native
       storage: new WebStorage(),
       trip: nativeTrip,
       reviews: nativeReviews,
+      deviceCalendar: nativeDeviceCalendar,
     }
   : {
       name: 'web',
@@ -24,6 +25,13 @@ export const platform: Platform = native
       storage: new WebStorage(),
       trip: webTrip,
       reviews: { available: false, request: async () => {}, storeUrl: null },
+      deviceCalendar: {
+        available: false,
+        reminders: false,
+        permission: async () => ({ calendar: 'unsupported', reminders: 'unsupported' }),
+        request: async () => 'unsupported',
+        events: async () => [],
+      },
     };
 
 export type * from './ports';

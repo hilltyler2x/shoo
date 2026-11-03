@@ -1,21 +1,29 @@
-import { formatDuration, minutesLateIfLeavingAt, type LeavePlan, type Phase } from '../core';
+import { OCCASIONS, formatDuration, minutesLateIfLeavingAt, type LeavePlan, type Occasion, type Phase } from '../core';
 import { MODE_LABEL, clock, dayLabel } from './format';
 import type { ShooState } from './useShoo';
 
 const TIER_LABEL = { gentle: 'Gentle', serious: 'Getting serious', panic: 'Panic mode', celebrate: 'Made it' };
 
-export function Today({ shoo, goTo }: { shoo: ShooState; goTo: (tab: 'shifts' | 'setup') => void }) {
+export function Today({ shoo, goTo }: { shoo: ShooState; goTo: (tab: 'plans' | 'setup') => void }) {
   const { settings, active, plan, phase, estimate, now, trip, nags } = shoo;
+  const nothingSetUp =
+    settings.places.length === 0 && settings.calendars.length === 0 && !settings.deviceCalendar && shoo.plans.length === 0;
 
-  if (!settings.job) {
+  if (nothingSetUp) {
     return (
       <div className="stack">
         <section className="card hero hero-chill">
           <p className="eyebrow">Welcome to Shoo</p>
           <h1>Never be late again.</h1>
-          <p>Tell Shoo where work is and when your shifts are. It works out when you have to leave, then nags you (nicely, then not nicely) until you do.</p>
+          <p>
+            Work, class, the gym, the dentist, a flight, dinner with friends. Tell Shoo where you're going and when, and it
+            works out when you have to leave, then nags you (nicely, then not nicely) until you do.
+          </p>
           <button className="btn btn-big" onClick={() => goTo('setup')}>
-            Set up my job
+            Add my places
+          </button>
+          <button className="btn btn-ghost" onClick={() => goTo('plans')}>
+            Connect my calendar
           </button>
         </section>
       </div>
@@ -26,18 +34,19 @@ export function Today({ shoo, goTo }: { shoo: ShooState; goTo: (tab: 'shifts' | 
     return (
       <div className="stack">
         <section className="card hero hero-chill">
-          <p className="eyebrow">No shifts this week</p>
+          <p className="eyebrow">Nothing coming up</p>
           <h1>Nothing to be late for 😎</h1>
-          <p>Add your work schedule or connect your calendar and Shoo will take it from here.</p>
-          <button className="btn btn-big" onClick={() => goTo('shifts')}>
-            Add shifts
+          <p>Add plans, a weekly schedule, or connect your calendar and Shoo will take it from here.</p>
+          <button className="btn btn-big" onClick={() => goTo('plans')}>
+            Add plans
           </button>
         </section>
       </div>
     );
   }
 
-  const shiftLine = `${active.title} · ${dayLabel(active.start, now)} at ${clock(active.start)}`;
+  const where = active.destination ? ` · ${active.destination.name}` : '';
+  const shiftLine = `${OCCASIONS[active.occasion].icon} ${active.shift.title} · ${dayLabel(active.shift.start, now)} at ${clock(active.shift.start)}${active.shift.title === active.destination?.name ? '' : where}`;
 
   if (!plan || !phase) {
     return (
@@ -61,11 +70,11 @@ export function Today({ shoo, goTo }: { shoo: ShooState; goTo: (tab: 'shifts' | 
     );
   }
 
-  const { headline, sub } = describe(phase, plan, now, trip.arrivedAt);
+  const { headline, sub } = describe(phase, plan, now, active.occasion, trip.arrivedAt);
   const travelLine = estimate
     ? `${estimate.minutes} min ${MODE_LABEL[settings.travelMode]} from ${shoo.originIsLive ? 'where you are' : trip.origin ? 'where you started' : 'home'}${estimate.trafficAware ? ' · live traffic' : ' · no live traffic'}`
     : '';
-  const todaysNags = nags.filter((n) => n.shiftId === active.id);
+  const todaysNags = nags.filter((n) => n.shiftId === active.shift.id);
 
   return (
     <div className="stack">
@@ -108,7 +117,7 @@ export function Today({ shoo, goTo }: { shoo: ShooState; goTo: (tab: 'shifts' | 
             <dd className="strong">{clock(plan.leaveAt)}</dd>
           </div>
           <div>
-            <dt>Shift starts</dt>
+            <dt>Starts</dt>
             <dd>{clock(plan.shiftStart)}</dd>
           </div>
         </dl>
@@ -144,7 +153,7 @@ export function Today({ shoo, goTo }: { shoo: ShooState; goTo: (tab: 'shifts' | 
   );
 }
 
-function describe(phase: Phase, plan: LeavePlan, now: number, arrivedAt?: number) {
+function describe(phase: Phase, plan: LeavePlan, now: number, occasion: Occasion, arrivedAt?: number) {
   switch (phase) {
     case 'chill':
       return { headline: `Leave by ${clock(plan.leaveAt)}`, sub: `That's ${formatDuration(plan.leaveAt - now)} from now. Relax for a bit.` };
@@ -154,13 +163,14 @@ function describe(phase: Phase, plan: LeavePlan, now: number, arrivedAt?: number
       return { headline: 'SHOO! Leave now.', sub: `Go now and you're there right on time.` };
     case 'running-late': {
       const late = minutesLateIfLeavingAt(now, plan);
-      return { headline: `${late} min late if you leave now`, sub: "Run to the car. Maybe text your manager. 🏃" };
+      const text = occasion === 'work' ? 'Maybe text your manager.' : "Maybe send a 'running late' text.";
+      return { headline: `${late} min late if you leave now`, sub: `Run to the car. ${text} 🏃` };
     }
     case 'on-the-way':
-      return { headline: 'On the way 🚗', sub: `Shift starts at ${clock(plan.shiftStart)}. Eyes on the road.` };
+      return { headline: 'On the way 🚗', sub: `Starts at ${clock(plan.shiftStart)}. Eyes on the road.` };
     case 'arrived':
       return arrivedAt !== undefined && arrivedAt <= plan.shiftStart
-        ? { headline: 'Made it! 🏆', sub: 'Look at you, on time like a responsible adult.' }
-        : { headline: 'Made it 🫠', sub: 'Not on time, but you made it. Tomorrow we try again.' };
+        ? { headline: 'Made it! 🏆', sub: OCCASIONS[occasion].celebrate }
+        : { headline: 'Made it 🫠', sub: OCCASIONS[occasion].late };
   }
 }

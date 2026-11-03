@@ -1,6 +1,6 @@
 import type { CalendarEvent } from './ics';
 import { DAY, MINUTE, parseClock } from './time';
-import type { Settings, Shift, WeeklyShift } from './types';
+import type { CalendarFeed, Settings, Shift, WeeklyShift } from './types';
 
 /** Weekly shifts turned into real dates between `from` and `to`, in local time. */
 export function expandWeekly(weekly: WeeklyShift[], from: number, to: number): Shift[] {
@@ -20,31 +20,66 @@ export function expandWeekly(weekly: WeeklyShift[], from: number, to: number): S
         if (end <= start) end += DAY; // overnight shift
       }
       if (start < from || start > to) continue;
-      out.push({ id: `weekly:${w.id}:${dateKey(day)}`, title: 'Work', start, end, source: 'weekly' });
+      out.push({
+        id: `weekly:${w.id}:${dateKey(day)}`,
+        title: w.title || 'Work',
+        start,
+        end,
+        source: 'weekly',
+        placeId: w.placeId,
+      });
     }
   }
   return out;
 }
 
-export function calendarShifts(events: CalendarEvent[], keyword: string): Shift[] {
-  const needle = keyword.trim().toLowerCase();
+/** Events from a linked calendar. A feed tied to a saved place sends every event there. */
+export function calendarShifts(feed: CalendarFeed, events: CalendarEvent[]): Shift[] {
+  const needle = feed.keyword.trim().toLowerCase();
   return events
     .filter((e) => !needle || e.title.toLowerCase().includes(needle))
-    .map((e) => ({ id: `cal:${e.uid}`, title: e.title || 'Work', start: e.start, end: e.end, source: 'calendar' }));
+    .map((e) => ({
+      id: `cal:${feed.id}:${e.uid}`,
+      title: e.title || feed.name || 'Plan',
+      start: e.start,
+      end: e.end,
+      source: 'calendar',
+      ...(feed.placeId ? { placeId: feed.placeId } : eventWhere(e)),
+    }));
 }
 
-const SOURCE_RANK: Record<Shift['source'], number> = { manual: 0, calendar: 1, weekly: 2 };
+/** Events from the phone's own calendar. */
+export function deviceShifts(events: CalendarEvent[]): Shift[] {
+  return events.map((e) => ({
+    id: `dev:${e.uid}`,
+    title: e.title || 'Plan',
+    start: e.start,
+    end: e.end,
+    source: 'device',
+    ...eventWhere(e),
+  }));
+}
+
+function eventWhere(e: CalendarEvent): Pick<Shift, 'address' | 'location'> {
+  return {
+    ...(e.location.trim() ? { address: e.location.trim() } : {}),
+    ...(e.lat !== undefined && e.lng !== undefined ? { location: { lat: e.lat, lng: e.lng } } : {}),
+  };
+}
+
+const SOURCE_RANK: Record<Shift['source'], number> = { manual: 0, calendar: 1, device: 2, weekly: 3 };
 
 /**
- * Every known shift from now until `horizonDays` out, soonest first. A shift
+ * Every known plan from now until `horizonDays` out, soonest first. A plan
  * that started in the last `graceMinutes` still counts, so the late nags have
- * somewhere to live. Two shifts starting within a minute of each other are
- * the same shift (a manual entry wins over the calendar, which wins over the
- * weekly pattern).
+ * somewhere to live. Two plans starting within a minute of each other are
+ * the same plan (a manual entry wins over a calendar, which wins over the
+ * weekly pattern), so a shift that's in both Homebase and Google shows once.
  */
 export function upcomingShifts(
-  settings: Pick<Settings, 'weekly' | 'manualShifts' | 'calendarKeyword'>,
-  events: CalendarEvent[],
+  settings: Pick<Settings, 'weekly' | 'manualShifts' | 'calendars'>,
+  feedEvents: Record<string, CalendarEvent[]>,
+  deviceEvents: CalendarEvent[],
   now: number,
   horizonDays = 7,
   graceMinutes = 15,
@@ -53,7 +88,8 @@ export function upcomingShifts(
   const to = now + horizonDays * DAY;
   const all = [
     ...settings.manualShifts,
-    ...calendarShifts(events, settings.calendarKeyword),
+    ...settings.calendars.flatMap((feed) => calendarShifts(feed, feedEvents[feed.id] ?? [])),
+    ...deviceShifts(deviceEvents),
     ...expandWeekly(settings.weekly, from, to),
   ]
     .filter((s) => s.start >= from && s.start <= to)

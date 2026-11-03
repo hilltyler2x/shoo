@@ -1,9 +1,22 @@
 # Shoo: Never Be Late.
 
-Shoo knows where your job is and when your shift starts. It works out when you
-have to walk out the door, checks traffic, and sends funny notifications that
-get less polite the longer you sit there. When you leave, it backs off. When
-you arrive on time, it's proud of you.
+Shoo knows where you need to be and when: work shifts, class, the gym, the
+dentist, a flight, dinner. It works out when you have to walk out the door,
+checks traffic, and sends funny notifications that get less polite the longer
+you sit there, with jokes that fit the occasion. When you leave, it backs off.
+When you arrive on time, it's proud of you.
+
+Plans come from:
+
+- saved places plus weekly or one-time plans you add by hand
+- linked calendars by iCal link (Google, Outlook, iCloud) and work schedule apps
+  that share one (Homebase, When I Work, 7shifts, Deputy)
+- the phone's own calendar, and the iPhone Reminders app (timed reminders)
+- Quick add: paste a schedule or confirmation email, or pick a screenshot.
+  Screenshots are read on the device with Tesseract; nothing is uploaded.
+
+Events with an address are looked up on the map; events at a saved place
+("Planet Fitness", "Work") are matched by name.
 
 It runs as a website today and is built to become an iPhone and Android app
 with Capacitor without a rewrite.
@@ -12,16 +25,16 @@ with Capacitor without a rewrite.
 
 | Folder | What's in it |
 | --- | --- |
-| `src/core/` | The rules: leave time, nag schedule, message copy, calendar (.ics) reader, shift list, "have you left?" tracking. Pure TypeScript, no browser or network code, so the phone apps reuse it unchanged. |
+| `src/core/` | The rules: leave time, nag schedule, message copy per occasion, calendar (.ics) reader, places and plan list, schedule/email text reader, "have you left?" tracking. Pure TypeScript, no browser or network code, so the phone apps reuse it unchanged. |
 | `src/platform/` | Small adapters for things each platform does differently: notifications, location, storage. The website plugs in browser versions; the phone apps plug in native ones. |
-| `src/ui/` | React screens: Today, Shifts, Setup. Phone-first, screen-sized shell with safe-area insets. |
+| `src/ui/` | React screens: Today, Plans, Setup. Phone-first, screen-sized shell with safe-area insets. |
 | `src/api.ts` | Talks to the server. Keeps retrying with "starting up…" while Render's free server wakes. |
 | `server/` | Small Express server. Holds the maps key, fetches calendars, needs a passcode, rate limited per visitor. Also serves the built website. |
 | `tests/` | Vitest. No real API keys: maps and calendar hosts are faked. |
 
 ### The nag ladder
 
-Working back from the shift start: *arrive early buffer* → *travel time* →
+Working back from the start time: *arrive early buffer* → *travel time* →
 *leave time* → *get-ready time*.
 
 - **Gentle** (before leave time): "Hey, you might wanna start putting your shoes on 👟"

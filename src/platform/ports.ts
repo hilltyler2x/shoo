@@ -1,6 +1,7 @@
 // What the app needs from the device. The website and the phone apps each
 // plug in their own version, so nothing above this line cares which it is.
 
+import type { CalendarEvent } from '../core/ics';
 import type { LatLng, ScheduledNag } from '../core/types';
 
 export type PermissionState = 'granted' | 'denied' | 'prompt' | 'unsupported';
@@ -28,6 +29,7 @@ export interface TripWatch {
   /** Leaving before this doesn't count (a late-night snack run). */
   watchFrom: number;
   origin: LatLng;
+  /** Where you're headed. (Called "job" on the native side, from when that was the only place.) */
   job: LatLng;
   radius: number;
   celebrateTitle: string;
@@ -69,6 +71,20 @@ export interface ReviewPort {
   readonly storeUrl: string | null;
 }
 
+/**
+ * The phone's own calendar and (on iPhone) the Reminders app. Read-only.
+ * The website can't reach either, so there it's unavailable.
+ */
+export interface DeviceCalendarPort {
+  readonly available: boolean;
+  /** Reminders app support (iPhone only). */
+  readonly reminders: boolean;
+  permission(): Promise<{ calendar: PermissionState; reminders: PermissionState }>;
+  request(which: 'calendar' | 'reminders'): Promise<PermissionState>;
+  /** Timed events and reminders between two times. All-day ones are left out. */
+  events(from: number, to: number): Promise<CalendarEvent[]>;
+}
+
 export interface StoragePort {
   load<T>(key: string, fallback: T): T;
   save<T>(key: string, value: T): void;
@@ -81,4 +97,5 @@ export interface Platform {
   storage: StoragePort;
   trip: TripPort;
   reviews: ReviewPort;
+  deviceCalendar: DeviceCalendarPort;
 }

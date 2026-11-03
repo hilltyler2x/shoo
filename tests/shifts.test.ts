@@ -28,7 +28,7 @@ describe('upcomingShifts', () => {
     ...DEFAULT_SETTINGS,
     weekly: [{ id: 'w', days: [1, 2], start: '09:00' }],
     manualShifts: [{ id: 'm1', title: 'Covering for Sam', start: at(26, 9), source: 'manual' as const }],
-    calendarKeyword: 'shift',
+    calendars: [{ id: 'c', name: 'Homebase', url: 'x', placeId: 'work', keyword: 'shift' }],
   };
   const events = [
     { uid: 'a', title: 'Shift at the shop', location: '', start: at(27, 13) },
@@ -36,16 +36,37 @@ describe('upcomingShifts', () => {
   ];
 
   it('merges sources, prefers manual, filters by keyword', () => {
-    const shifts = upcomingShifts(settings, events, at(26, 7));
+    const shifts = upcomingShifts(settings, { c: events }, [], at(26, 7));
     expect(shifts.map((s) => [s.title, s.source])).toEqual([
       ['Covering for Sam', 'manual'],
       ['Work', 'weekly'],
       ['Shift at the shop', 'calendar'],
     ]);
+    expect(shifts[2].placeId).toBe('work');
+  });
+
+  it('sends phone calendar events to their own location', () => {
+    const device = [
+      { uid: 'd1', title: 'Dentist', location: '1 Health Way', lat: 3, lng: 4, start: at(28, 15) },
+      { uid: 'd2', title: 'Call mom', location: '', start: at(28, 18) },
+    ];
+    const shifts = upcomingShifts({ ...settings, weekly: [], manualShifts: [] }, {}, device, at(26, 7));
+    expect(shifts).toMatchObject([
+      { id: 'dev:d1', source: 'device', address: '1 Health Way', location: { lat: 3, lng: 4 } },
+      { id: 'dev:d2', title: 'Call mom' },
+    ]);
+    expect(shifts[1].address).toBeUndefined();
+  });
+
+  it('uses a feed event location when the feed has no place', () => {
+    const feed = { id: 'g', name: 'Google', url: 'x', placeId: '', keyword: '' };
+    const [s] = upcomingShifts({ weekly: [], manualShifts: [], calendars: [feed] }, { g: [events[1]] }, [], at(26, 7));
+    expect(s).toMatchObject({ id: 'cal:g:b', title: 'Dentist' });
+    expect(s.placeId).toBeUndefined();
   });
 
   it('keeps a shift that just started so the late nags still apply', () => {
-    expect(upcomingShifts(settings, [], at(26, 9, 10))[0].start).toBe(at(26, 9));
-    expect(upcomingShifts(settings, [], at(26, 9, 20))[0].start).not.toBe(at(26, 9));
+    expect(upcomingShifts(settings, {}, [], at(26, 9, 10))[0].start).toBe(at(26, 9));
+    expect(upcomingShifts(settings, {}, [], at(26, 9, 20))[0].start).not.toBe(at(26, 9));
   });
 });

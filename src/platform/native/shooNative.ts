@@ -1,4 +1,5 @@
 import { registerPlugin, type PluginListenerHandle } from '@capacitor/core';
+import type { CalendarEvent } from '../../core/ics';
 import type { ScheduledNag } from '../../core/types';
 import type { PermissionState, TripEvent, TripWatch } from '../ports';
 
@@ -17,6 +18,9 @@ export interface ShooNativePlugin {
   clearTrip(): Promise<void>;
   markLeft(): Promise<void>;
   takeTripEvents(): Promise<{ events: TripEvent[] }>;
+  calendarStatus(): Promise<{ calendar: PermissionState; reminders: PermissionState }>;
+  requestCalendar(options: { which: 'calendar' | 'reminders' }): Promise<{ state: PermissionState }>;
+  calendarEvents(options: { from: number; to: number }): Promise<{ events: CalendarEvent[] }>;
   addListener(event: 'trip', fn: (e: TripEvent) => void): Promise<PluginListenerHandle>;
 }
 

@@ -7,6 +7,9 @@ export interface CalendarEvent {
   uid: string;
   title: string;
   location: string;
+  /** Coordinates, when the source has them (EventKit does; iCal GEO too). */
+  lat?: number;
+  lng?: number;
   start: number;
   end?: number;
 }
@@ -99,6 +102,7 @@ export function parseIcs(text: string, from: number, to: number): CalendarEvent[
         uid: `${uid}@${t}`,
         title: unescape(get('SUMMARY')?.value ?? ''),
         location: unescape(get('LOCATION')?.value ?? ''),
+        ...geo(get('GEO')?.value),
         start: t,
         end: duration === undefined ? undefined : t + duration,
       });
@@ -120,9 +124,18 @@ function pushSingle(props: RawProp[], from: number, to: number, out: CalendarEve
     uid: get('UID')?.value ?? String(start),
     title: unescape(get('SUMMARY')?.value ?? ''),
     location: unescape(get('LOCATION')?.value ?? ''),
+    ...geo(get('GEO')?.value),
     start,
     end,
   });
+}
+
+/** GEO:37.386;-122.083 */
+function geo(value: string | undefined): { lat?: number; lng?: number } {
+  const [lat, lng] = (value ?? '').split(';').map(Number);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || value === undefined) return {};
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return {};
+  return { lat, lng };
 }
 
 function eventDuration(props: RawProp[], start: number): number | undefined {

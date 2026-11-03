@@ -1,26 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api';
 import {
-  DEFAULT_SETTINGS,
-  LATE_ARRIVAL,
   newReviewState,
   recordAsk,
   shouldAskForReview,
   type ReviewState,
-  MESSAGES,
   MINUTE,
+  OCCASIONS,
   TIER_TITLES,
+  addressKey,
+  addressesToLookUp,
   buildNagSchedule,
+  celebrateMessage,
   computeLeavePlan,
+  destinationFor,
+  detectOccasion,
   distanceMeters,
+  migrateSettings,
   parseIcs,
   pendingNags,
   phaseAt,
   updateTrip,
   upcomingShifts,
   type CalendarEvent,
+  type Destination,
+  type Geocoded,
   type LatLng,
   type LeavePlan,
+  type Occasion,
   type Phase,
   type ScheduledNag,
   type Settings,
@@ -30,10 +37,10 @@ import {
 } from '../core';
 import { platform, type PermissionState, type TripEvent } from '../platform';
 
-const { storage, notifications, location, trip: tripPort, reviews } = platform;
+const { storage, notifications, location, trip: tripPort, reviews, deviceCalendar } = platform;
 
 interface Trip extends TripState {
-  /** Where you were when Shoo started watching for this shift. */
+  /** Where you were when Shoo started watching for this plan. */
   origin?: LatLng;
   updatedAt?: number;
 }
@@ -52,21 +59,31 @@ interface CalendarCache {
   fetchedAt: number;
 }
 
+/** A plan plus where it is and what kind of thing it is. */
+export interface Planned {
+  shift: Shift;
+  destination: Destination | null;
+  occasion: Occasion;
+}
+
 /** Re-check traffic this often when the leave time is close, and when it isn't. */
 const ROUTE_FRESH_SOON = 5 * MINUTE;
 const ROUTE_FRESH_LATER = 30 * MINUTE;
 const CALENDAR_FRESH = 30 * MINUTE;
+const DEVICE_CALENDAR_FRESH = 10 * MINUTE;
 /** Keep showing "made it" this long after arriving. */
 const CELEBRATE_FOR = 30 * MINUTE;
 /** iOS allows 64 pending notifications. Leave room. */
 const MAX_PENDING = 60;
+/** Plans that get nags scheduled ahead. */
+const NAG_AHEAD = 4;
 
 export interface ShooState {
   now: number;
   settings: Settings;
   update: (patch: Partial<Settings>) => void;
-  shifts: Shift[];
-  active: Shift | null;
+  plans: Planned[];
+  active: Planned | null;
   plan: LeavePlan | null;
   phase: Phase | null;
   trip: Trip;
@@ -84,8 +101,17 @@ export interface ShooState {
   resetTrip: () => void;
   refreshRoute: () => void;
   routeError: string;
-  calendar: { fetchedAt: number | null; error: string; syncing: boolean; count: number };
-  syncCalendar: () => void;
+  /** Per linked calendar. */
+  calendars: Record<string, { fetchedAt: number | null; error: string; syncing: boolean; count: number }>;
+  syncCalendar: (id: string) => void;
+  device: {
+    available: boolean;
+    reminders: boolean;
+    calendar: PermissionState;
+    remindersPermission: PermissionState;
+    count: number;
+    request: (which: 'calendar' | 'reminders') => Promise<void>;
+  };
   serverWaking: boolean;
   passcodeRequired: boolean;
   passcodeOk: boolean;
@@ -101,22 +127,29 @@ export interface ShooState {
 }
 
 interface StoredReviews extends ReviewState {
-  /** Shifts already counted, so one arrival isn't counted twice. */
+  /** Plans already counted, so one arrival isn't counted twice. */
   counted: string[];
 }
 
+const routeKey = (to: LatLng, mode: Settings['travelMode']) => `${mode}|${to.lat.toFixed(4)},${to.lng.toFixed(4)}`;
+
 export function useShoo(): ShooState {
-  const [settings, setSettings] = useState<Settings>(() => ({
-    ...DEFAULT_SETTINGS,
-    ...storage.load<Partial<Settings>>('settings', {}),
-  }));
+  const [settings, setSettings] = useState<Settings>(() => migrateSettings(storage.load('settings', {})));
   const [now, setNow] = useState(Date.now());
   const [trips, setTrips] = useState<Record<string, Trip>>(() => storage.load('trips', {}));
-  const [route, setRoute] = useState<RouteCache | null>(() => storage.load('route', null));
+  const [routes, setRoutes] = useState<Record<string, RouteCache>>(() => storage.load('routes', {}));
   const [routeError, setRouteError] = useState('');
-  const [calendar, setCalendar] = useState<CalendarCache | null>(() => storage.load('calendar', null));
-  const [calendarError, setCalendarError] = useState('');
-  const [syncing, setSyncing] = useState(false);
+  const [calendars, setCalendars] = useState<Record<string, CalendarCache>>(() => storage.load('calendars', {}));
+  const [calendarErrors, setCalendarErrors] = useState<Record<string, string>>({});
+  const [syncing, setSyncing] = useState<Record<string, boolean>>({});
+  const [deviceEvents, setDeviceEvents] = useState<{ events: CalendarEvent[]; fetchedAt: number }>(() =>
+    storage.load('deviceEvents', { events: [], fetchedAt: 0 }),
+  );
+  const [devicePermission, setDevicePermission] = useState<{ calendar: PermissionState; reminders: PermissionState }>({
+    calendar: 'unsupported',
+    reminders: 'unsupported',
+  });
+  const [geocoded, setGeocoded] = useState<Geocoded>(() => storage.load('geocoded', {}));
   const [fix, setFix] = useState<LatLng | null>(null);
   const [locationError, setLocationError] = useState('');
   const [permission, setPermission] = useState<PermissionState>('prompt');
@@ -134,8 +167,10 @@ export function useShoo(): ShooState {
   useEffect(() => storage.save('settings', settings), [settings]);
   useEffect(() => storage.save('reviews', reviewState), [reviewState]);
   useEffect(() => storage.save('trips', pruneTrips(trips, now)), [trips]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => storage.save('route', route), [route]);
-  useEffect(() => storage.save('calendar', calendar), [calendar]);
+  useEffect(() => storage.save('routes', pruneRoutes(routes)), [routes]);
+  useEffect(() => storage.save('calendars', calendars), [calendars]);
+  useEffect(() => storage.save('deviceEvents', deviceEvents), [deviceEvents]);
+  useEffect(() => storage.save('geocoded', geocoded), [geocoded]);
 
   const update = useCallback((patch: Partial<Settings>) => setSettings((s) => ({ ...s, ...patch })), []);
 
@@ -186,6 +221,7 @@ export function useShoo(): ShooState {
   useEffect(() => {
     notifications.permission().then(setPermission);
     tripPort.backgroundPermission().then(setBackgroundLocation);
+    if (deviceCalendar.available) deviceCalendar.permission().then(setDevicePermission).catch(() => {});
   }, []);
   const requestBackgroundLocation = useCallback(async () => {
     setBackgroundLocation(await tripPort.requestBackground());
@@ -195,14 +231,14 @@ export function useShoo(): ShooState {
     setPermission(await notifications.request());
   }, []);
   const testNag = useCallback(async () => {
-    const lines = MESSAGES.serious;
-    await notifications.showNow(TIER_TITLES.serious, lines[Math.floor(Math.random() * lines.length)].text);
+    const all = Object.values(OCCASIONS).flatMap((o) => [...o.serious, ...o.panic]).filter((l) => !l.includes('{'));
+    await notifications.showNow(TIER_TITLES.serious, all[Math.floor(Math.random() * all.length)]);
   }, []);
 
-  // Location: only once there's a job to measure against.
-  const hasJob = settings.job !== null;
+  // Location: only once there's somewhere to measure against.
+  const wantsLocation = settings.places.length > 0 || settings.calendars.length > 0 || settings.deviceCalendar;
   useEffect(() => {
-    if (!hasJob) return;
+    if (!wantsLocation) return;
     return location.watch(
       (f) => {
         setFix(f);
@@ -210,97 +246,202 @@ export function useShoo(): ShooState {
       },
       setLocationError,
     );
-  }, [hasJob]);
+  }, [wantsLocation]);
 
-  // Calendar.
-  const syncCalendar = useCallback(() => {
-    const url = settings.calendarUrl.trim();
-    if (!url) {
-      setCalendar(null);
-      return;
-    }
-    setSyncing(true);
-    setCalendarError('');
+  // Linked calendars (Google, Outlook, iCloud, Homebase, When I Work…).
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const syncCalendar = useCallback((id: string) => {
+    const feed = settingsRef.current.calendars.find((c) => c.id === id);
+    const url = feed?.url.trim();
+    if (!feed || !url) return;
+    setSyncing((s) => ({ ...s, [id]: true }));
+    setCalendarErrors((e) => ({ ...e, [id]: '' }));
     api
       .fetchCalendar(url)
       .then((text) => {
         const t = Date.now();
-        setCalendar({ url, events: parseIcs(text, t - 86_400_000, t + 14 * 86_400_000), fetchedAt: t });
+        setCalendars((c) => ({ ...c, [id]: { url, events: parseIcs(text, t - 86_400_000, t + 14 * 86_400_000), fetchedAt: t } }));
       })
-      .catch((e: Error) => setCalendarError(e.message))
-      .finally(() => setSyncing(false));
-  }, [settings.calendarUrl]);
+      .catch((e: Error) => setCalendarErrors((errs) => ({ ...errs, [id]: e.message })))
+      .finally(() => setSyncing((s) => ({ ...s, [id]: false })));
+  }, []);
 
-  useEffect(() => setCalendarError(''), [settings.calendarUrl]);
   useEffect(() => {
-    if (!settings.calendarUrl || !passcodeOk) return;
-    if (calendar?.url === settings.calendarUrl && now - calendar.fetchedAt < CALENDAR_FRESH) return;
-    if (syncing || calendarError) return;
-    syncCalendar();
-  }, [settings.calendarUrl, calendar, now, syncing, calendarError, passcodeOk, syncCalendar]);
+    if (!passcodeOk) return;
+    for (const feed of settings.calendars) {
+      const cache = calendars[feed.id];
+      if (cache?.url === feed.url && now - cache.fetchedAt < CALENDAR_FRESH) continue;
+      if (syncing[feed.id] || calendarErrors[feed.id]) continue;
+      syncCalendar(feed.id);
+    }
+  }, [settings.calendars, calendars, now, syncing, calendarErrors, passcodeOk, syncCalendar]);
 
-  // Which shift are we getting you to?
-  const events = calendar?.url === settings.calendarUrl ? calendar.events : [];
-  const shifts = useMemo(() => upcomingShifts(settings, events, now), [settings, events, now]);
+  // The phone's own calendar and Reminders.
+  const deviceOn =
+    deviceCalendar.available &&
+    settings.deviceCalendar &&
+    (devicePermission.calendar === 'granted' || devicePermission.reminders === 'granted');
+  const readDevice = useCallback(() => {
+    const t = Date.now();
+    deviceCalendar
+      .events(t - 86_400_000, t + 8 * 86_400_000)
+      .then((events) => setDeviceEvents({ events, fetchedAt: t }))
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (!deviceOn) return;
+    if (now - deviceEvents.fetchedAt > DEVICE_CALENDAR_FRESH) readDevice();
+  }, [deviceOn, now, deviceEvents.fetchedAt, readDevice]);
+  useEffect(() => {
+    if (!deviceOn) return;
+    const onVisible = () => document.visibilityState === 'visible' && readDevice();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [deviceOn, readDevice]);
+  const requestDevice = useCallback(
+    async (which: 'calendar' | 'reminders') => {
+      const state = await deviceCalendar.request(which);
+      setDevicePermission((p) => ({ ...p, [which]: state }));
+      if (state === 'granted') {
+        update({ deviceCalendar: true });
+        readDevice();
+      }
+    },
+    [update, readDevice],
+  );
+
+  // What's coming up, and where.
+  const feedEvents = useMemo(
+    () =>
+      Object.fromEntries(
+        settings.calendars.map((f) => [f.id, calendars[f.id]?.url === f.url ? calendars[f.id].events : []]),
+      ),
+    [settings.calendars, calendars],
+  );
+  const shifts = useMemo(
+    () => upcomingShifts(settings, feedEvents, deviceOn ? deviceEvents.events : [], now),
+    [settings, feedEvents, deviceOn, deviceEvents.events, now],
+  );
+  const plans: Planned[] = useMemo(
+    () =>
+      shifts.map((shift) => {
+        const destination = destinationFor(shift, settings, geocoded);
+        const place = settings.places.find((p) => p.id === destination?.placeId);
+        return {
+          shift,
+          destination,
+          occasion: detectOccasion(shift.title, destination?.name ?? '', place?.kind ?? destination?.kind),
+        };
+      }),
+    [shifts, settings, geocoded],
+  );
+
+  // Look up calendar addresses, one at a time (OpenStreetMap asks for one a second).
+  const geocoding = useRef(false);
+  // Lookups that failed (offline, say): try again next launch, not every second.
+  const failedLookups = useRef(new Set<string>());
+  const toLookUp = useMemo(
+    () => addressesToLookUp(shifts, settings, geocoded).filter((a) => !failedLookups.current.has(a)),
+    [shifts, settings, geocoded, now], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  useEffect(() => {
+    if (geocoding.current || toLookUp.length === 0 || !passcodeOk) return;
+    const address = toLookUp[0];
+    geocoding.current = true;
+    api
+      .searchPlaces(address)
+      .then((found) => setGeocoded((g) => ({ ...g, [addressKey(address)]: found[0] ?? null })))
+      .catch(() => failedLookups.current.add(address))
+      .finally(() => {
+        window.setTimeout(() => {
+          geocoding.current = false;
+          setNow(Date.now());
+        }, 1100);
+      });
+  }, [toLookUp, passcodeOk]);
+
   const active =
-    shifts.find((s) => {
-      const arrivedAt = trips[s.id]?.arrivedAt;
+    plans.find(({ shift, destination }) => {
+      if (!destination) return false;
+      const arrivedAt = trips[shift.id]?.arrivedAt;
       return arrivedAt === undefined || now - arrivedAt < CELEBRATE_FOR;
     }) ?? null;
-  const trip: Trip = (active && trips[active.id]) || {};
+  const trip: Trip = (active && trips[active.shift.id]) || {};
 
   const originIsLive = !trip.origin && fix !== null;
   const origin = trip.origin ?? fix ?? settings.home?.location ?? null;
-  const job = settings.job?.location ?? null;
+  const dest = active?.destination?.location ?? null;
 
-  const routeMatches =
-    route !== null && job !== null && origin !== null &&
-    route.mode === settings.travelMode &&
-    distanceMeters(route.to, job) < 50 &&
-    distanceMeters(route.from, origin) < 300;
-  const estimate = routeMatches ? route.estimate : null;
-
-  const plan = useMemo(
-    () =>
-      active && estimate
-        ? computeLeavePlan({
-            shiftStart: active.start,
-            travelMinutes: estimate.minutes,
-            prepMinutes: settings.prepMinutes,
-            arriveEarlyMinutes: settings.arriveEarlyMinutes,
-          })
-        : null,
-    [active, estimate, settings.prepMinutes, settings.arriveEarlyMinutes],
+  const estimateFor = useCallback(
+    (to: LatLng): RouteCache | null => {
+      const r = routes[routeKey(to, settings.travelMode)];
+      if (!r || !origin || distanceMeters(r.from, origin) > 300) return null;
+      return r;
+    },
+    [routes, settings.travelMode, origin],
   );
+  const activeRoute = dest ? estimateFor(dest) : null;
+  const estimate = activeRoute?.estimate ?? null;
+
+  const planFor = useCallback(
+    (p: Planned, travelMinutes: number) =>
+      computeLeavePlan({
+        shiftStart: p.shift.start,
+        travelMinutes,
+        prepMinutes: settings.prepMinutes,
+        arriveEarlyMinutes: p.destination?.arriveEarlyMinutes ?? settings.arriveEarlyMinutes,
+      }),
+    [settings.prepMinutes, settings.arriveEarlyMinutes],
+  );
+  const plan = useMemo(() => (active && estimate ? planFor(active, estimate.minutes) : null), [active, estimate, planFor]);
   const phase = plan ? phaseAt(now, plan, trip) : null;
 
   // Traffic: refresh when stale, more often as the leave time gets close.
   const routing = useRef(false);
-  const lastAttempt = useRef(0);
+  const lastAttempt = useRef<Record<string, number>>({});
+  const fetchRoute = useCallback(
+    (to: LatLng, departAt?: number) => {
+      if (!origin || routing.current || !passcodeOk) return;
+      const key = routeKey(to, settings.travelMode);
+      routing.current = true;
+      lastAttempt.current[key] = Date.now();
+      setRouteError('');
+      const from = origin;
+      const mode = settings.travelMode;
+      api
+        .travelTime(from, to, mode, departAt)
+        .then((estimate) => setRoutes((r) => ({ ...r, [key]: { estimate, from, to, mode, fetchedAt: Date.now() } })))
+        .catch((e: Error) => setRouteError(e.message))
+        .finally(() => {
+          routing.current = false;
+          setNow(Date.now());
+        });
+    },
+    [origin, settings.travelMode, passcodeOk],
+  );
   const refreshRoute = useCallback(() => {
-    if (!origin || !job || routing.current || !passcodeOk) return;
-    routing.current = true;
-    lastAttempt.current = Date.now();
-    setRouteError('');
-    const departAt = plan && plan.leaveAt > Date.now() ? plan.leaveAt : undefined;
-    api
-      .travelTime(origin, job, settings.travelMode, departAt)
-      .then((estimate) =>
-        setRoute({ estimate, from: origin, to: job, mode: settings.travelMode, fetchedAt: Date.now() }),
-      )
-      .catch((e: Error) => setRouteError(e.message))
-      .finally(() => {
-        routing.current = false;
-      });
-  }, [origin, job, settings.travelMode, plan, passcodeOk]);
+    if (dest) fetchRoute(dest, plan && plan.leaveAt > Date.now() ? plan.leaveAt : undefined);
+  }, [dest, plan, fetchRoute]);
 
   useEffect(() => {
-    if (!active || !origin || !job || trip.leftAt !== undefined) return;
-    const soon = plan ? now > plan.getReadyAt - 2 * 60 * MINUTE : false;
-    const maxAge = soon ? ROUTE_FRESH_SOON : ROUTE_FRESH_LATER;
-    const stale = !routeMatches || now - route!.fetchedAt > maxAge;
-    if (stale && Date.now() - lastAttempt.current > 60_000) refreshRoute();
-  }, [active, origin, job, trip.leftAt, plan, now, routeMatches, route, refreshRoute]);
+    if (!origin || routing.current) return;
+    // The plan you're getting ready for first, then the next few so their nags are ready too.
+    const upcoming = plans.filter((p) => p.destination && trips[p.shift.id]?.leftAt === undefined).slice(0, NAG_AHEAD);
+    for (const p of upcoming) {
+      const to = p.destination!.location;
+      const cached = estimateFor(to);
+      const isActive = p.shift.id === active?.shift.id;
+      const soon = isActive && plan ? now > plan.getReadyAt - 2 * 60 * MINUTE : false;
+      const maxAge = soon ? ROUTE_FRESH_SOON : ROUTE_FRESH_LATER;
+      const stale = !cached || now - cached.fetchedAt > maxAge;
+      const key = routeKey(to, settings.travelMode);
+      if (stale && Date.now() - (lastAttempt.current[key] ?? 0) > 60_000) {
+        fetchRoute(to, isActive && plan && plan.leaveAt > Date.now() ? plan.leaveAt : undefined);
+        return;
+      }
+    }
+  }, [plans, trips, origin, active, plan, now, estimateFor, fetchRoute, settings.travelMode]);
 
   // Did you leave? Did you make it?
   const setTrip = useCallback(
@@ -308,32 +449,32 @@ export function useShoo(): ShooState {
     [],
   );
   useEffect(() => {
-    if (!active || !plan || !job || !fix) return;
-    const current = trips[active.id] ?? {};
+    if (!active || !plan || !dest || !fix) return;
+    const current = trips[active.shift.id] ?? {};
     const watchedOrigin = current.origin ?? fix;
-    const { trip: next, event } = updateTrip(current, plan, watchedOrigin, job, fix, Date.now());
+    const { trip: next, event } = updateTrip(current, plan, watchedOrigin, dest, fix, Date.now());
     const withOrigin: Trip = { ...next, origin: watchedOrigin };
-    if (event || (!current.origin && Date.now() >= plan.getReadyAt - 30 * MINUTE)) setTrip(active.id, withOrigin);
+    if (event || (!current.origin && Date.now() >= plan.getReadyAt - 30 * MINUTE)) setTrip(active.shift.id, withOrigin);
     if (event === 'left') void tripPort.markLeft();
-    // On phones the work geofence sends the celebration itself.
-    if (event === 'arrived' && !tripPort.native) celebrate(next, plan);
+    // On phones the destination geofence sends the celebration itself.
+    if (event === 'arrived' && !tripPort.native) celebrate(next, plan, active.occasion);
   }, [fix]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const markLeft = useCallback(() => {
     if (!active) return;
-    setTrip(active.id, { ...trip, leftAt: Date.now() });
+    setTrip(active.shift.id, { ...trip, leftAt: Date.now() });
     void tripPort.markLeft();
   }, [active, trip, setTrip]);
   const markArrived = useCallback(() => {
     if (!active) return;
     const next = { ...trip, leftAt: trip.leftAt ?? Date.now(), arrivedAt: Date.now() };
-    setTrip(active.id, next);
+    setTrip(active.shift.id, next);
     void tripPort.clear();
-    if (plan) celebrate(next, plan);
+    if (plan) celebrate(next, plan, active.occasion);
   }, [active, trip, plan, setTrip]);
   const resetTrip = useCallback(() => {
     if (!active) return;
-    setTrip(active.id, {});
+    setTrip(active.shift.id, {});
     void tripPort.clear();
   }, [active, setTrip]);
 
@@ -360,34 +501,35 @@ export function useShoo(): ShooState {
     };
   }, []);
 
-  // Phone apps: hand the native side the geofences for the shift we're watching.
+  // Phone apps: hand the native side the geofences for the plan we're watching.
   const watchKey =
-    active && plan && job && origin && trip.arrivedAt === undefined
-      ? `${active.id}|${origin.lat.toFixed(3)},${origin.lng.toFixed(3)}|${trip.leftAt ?? ''}|${plan.getReadyAt}`
+    active && plan && dest && origin && trip.arrivedAt === undefined
+      ? `${active.shift.id}|${origin.lat.toFixed(3)},${origin.lng.toFixed(3)}|${dest.lat.toFixed(4)},${dest.lng.toFixed(4)}|${trip.leftAt ?? ''}|${plan.getReadyAt}`
       : '';
   useEffect(() => {
-    if (!tripPort.native || !watchKey || !active || !plan || !job || !origin) return;
+    if (!tripPort.native || !watchKey || !active || !plan || !dest || !origin) return;
     void tripPort.watch({
-      shiftId: active.id,
-      shiftStart: active.start,
+      shiftId: active.shift.id,
+      shiftStart: active.shift.start,
       watchFrom: plan.getReadyAt - 30 * MINUTE,
       origin,
-      job,
+      job: dest,
       radius: 150,
       celebrateTitle: TIER_TITLES.celebrate,
-      onTimeBody: MESSAGES.celebrate[0].text,
-      lateBody: LATE_ARRIVAL,
+      onTimeBody: celebrateMessage(active.occasion, true),
+      lateBody: celebrateMessage(active.occasion, false),
     });
   }, [watchKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ask for a store review right after an on-time arrival, when the rules allow.
+  const activeId = active?.shift.id;
   useEffect(() => {
-    if (!active || !trip.arrivedAt || trip.arrivedAt > active.start) return;
-    if (reviewState.counted.includes(active.id)) return;
+    if (!active || !trip.arrivedAt || trip.arrivedAt > active.shift.start) return;
+    if (reviewState.counted.includes(active.shift.id)) return;
     const counted: StoredReviews = {
       ...reviewState,
       onTimeArrivals: reviewState.onTimeArrivals + 1,
-      counted: [...reviewState.counted, active.id].slice(-20),
+      counted: [...reviewState.counted, active.shift.id].slice(-20),
     };
     const now = Date.now();
     const ask = reviews.available && shouldAskForReview(counted, now, trip.arrivedAt);
@@ -398,24 +540,25 @@ export function useShoo(): ShooState {
       if (document.visibilityState === 'visible') void reviews.request().catch(() => {});
     }, 2500);
     return () => window.clearTimeout(id);
-  }, [active?.id, trip.arrivedAt]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeId, trip.arrivedAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // The nags for the next few shifts, as if you never get off the couch.
+  // The nags for the next few plans, as if you never get off the couch.
   const nags = useMemo(() => {
-    if (!estimate) return [];
     const out: ScheduledNag[] = [];
-    for (const s of shifts.slice(0, 4)) {
-      if (trips[s.id]?.leftAt !== undefined) continue;
-      const p = computeLeavePlan({
-        shiftStart: s.start,
-        travelMinutes: estimate.minutes,
-        prepMinutes: settings.prepMinutes,
-        arriveEarlyMinutes: settings.arriveEarlyMinutes,
+    for (const p of plans.filter((p) => p.destination).slice(0, NAG_AHEAD)) {
+      if (trips[p.shift.id]?.leftAt !== undefined) continue;
+      const route = estimateFor(p.destination!.location);
+      if (!route) continue;
+      const leave = planFor(p, route.estimate.minutes);
+      const schedule = buildNagSchedule(p.shift.id, leave, {
+        trafficAware: route.estimate.trafficAware,
+        where: p.destination!.name,
+        occasion: p.occasion,
       });
-      out.push(...pendingNags(buildNagSchedule(s.id, p, { trafficAware: estimate.trafficAware }), now));
+      out.push(...pendingNags(schedule, now));
     }
-    return out.slice(0, MAX_PENDING);
-  }, [shifts, trips, estimate, settings.prepMinutes, settings.arriveEarlyMinutes, now]);
+    return out.sort((a, b) => a.at - b.at).slice(0, MAX_PENDING);
+  }, [plans, trips, estimateFor, planFor, now]);
 
   // Only hand the device a new list when something actually changed.
   const nagKey = nags.map((n) => `${n.id}@${n.at}`).join('|');
@@ -427,7 +570,7 @@ export function useShoo(): ShooState {
     now,
     settings,
     update,
-    shifts,
+    plans,
     active,
     plan,
     phase,
@@ -446,13 +589,29 @@ export function useShoo(): ShooState {
     resetTrip,
     refreshRoute,
     routeError,
-    calendar: {
-      fetchedAt: calendar?.url === settings.calendarUrl ? calendar.fetchedAt : null,
-      error: calendarError,
-      syncing,
-      count: events.length,
-    },
+    calendars: Object.fromEntries(
+      settings.calendars.map((f) => {
+        const cache = calendars[f.id]?.url === f.url ? calendars[f.id] : null;
+        return [
+          f.id,
+          {
+            fetchedAt: cache?.fetchedAt ?? null,
+            error: calendarErrors[f.id] ?? '',
+            syncing: syncing[f.id] ?? false,
+            count: cache?.events.length ?? 0,
+          },
+        ];
+      }),
+    ),
     syncCalendar,
+    device: {
+      available: deviceCalendar.available,
+      reminders: deviceCalendar.reminders,
+      calendar: devicePermission.calendar,
+      remindersPermission: devicePermission.reminders,
+      count: deviceOn ? deviceEvents.events.length : 0,
+      request: requestDevice,
+    },
     serverWaking,
     passcodeRequired,
     passcodeOk,
@@ -466,14 +625,23 @@ export function useShoo(): ShooState {
   };
 }
 
-function celebrate(trip: TripState, plan: LeavePlan) {
+function celebrate(trip: TripState, plan: LeavePlan, occasion: Occasion) {
   const onTime = trip.arrivedAt !== undefined && trip.arrivedAt <= plan.shiftStart;
-  void notifications.showNow(TIER_TITLES.celebrate, onTime ? MESSAGES.celebrate[0].text : LATE_ARRIVAL);
+  void notifications.showNow(TIER_TITLES.celebrate, celebrateMessage(occasion, onTime));
 }
 
 /** Forget trips older than two days. */
 function pruneTrips(trips: Record<string, Trip>, now: number): Record<string, Trip> {
   return Object.fromEntries(
     Object.entries(trips).filter(([, t]) => (t.updatedAt ?? 0) > now - 2 * 86_400_000),
+  );
+}
+
+/** Keep the 30 most recent routes. */
+function pruneRoutes(routes: Record<string, RouteCache>): Record<string, RouteCache> {
+  return Object.fromEntries(
+    Object.entries(routes)
+      .sort(([, a], [, b]) => b.fetchedAt - a.fetchedAt)
+      .slice(0, 30),
   );
 }

@@ -1,9 +1,12 @@
 package com.tylerhill.shoo;
 
 import android.Manifest;
+import android.content.ContentUris;
 import android.content.Intent;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
+import android.provider.CalendarContract;
 import android.provider.Settings;
 import androidx.core.app.NotificationManagerCompat;
 import com.getcapacitor.JSArray;
@@ -27,6 +30,7 @@ import org.json.JSONObject;
         @Permission(alias = "notifications", strings = { Manifest.permission.POST_NOTIFICATIONS }),
         @Permission(alias = "location", strings = { Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION }),
         @Permission(alias = "backgroundLocation", strings = { Manifest.permission.ACCESS_BACKGROUND_LOCATION }),
+        @Permission(alias = "calendar", strings = { Manifest.permission.READ_CALENDAR }),
     }
 )
 public class ShooNativePlugin extends Plugin {
@@ -184,5 +188,86 @@ public class ShooNativePlugin extends Plugin {
         JSObject result = new JSObject();
         result.put("events", events);
         call.resolve(result);
+    }
+
+    // Calendar (read-only). Android has no shared Reminders app, so that part is iPhone only.
+
+    @PluginMethod
+    public void calendarStatus(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("calendar", calendarState());
+        result.put("reminders", "unsupported");
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void requestCalendar(PluginCall call) {
+        if ("reminders".equals(call.getString("which"))) {
+            JSObject result = new JSObject();
+            result.put("state", "unsupported");
+            call.resolve(result);
+            return;
+        }
+        if (getPermissionState("calendar") == PermissionState.GRANTED) {
+            afterCalendar(call);
+        } else {
+            requestPermissionForAlias("calendar", call, "afterCalendar");
+        }
+    }
+
+    @PermissionCallback
+    private void afterCalendar(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("state", calendarState());
+        call.resolve(result);
+    }
+
+    /** Timed events between "from" and "to" (epoch ms), shaped like the app's CalendarEvent. */
+    @PluginMethod
+    public void calendarEvents(PluginCall call) {
+        JSArray events = new JSArray();
+        JSObject result = new JSObject();
+        if (getPermissionState("calendar") != PermissionState.GRANTED) {
+            result.put("events", events);
+            call.resolve(result);
+            return;
+        }
+        long from = call.getDouble("from", 0.0).longValue();
+        long to = call.getDouble("to", 0.0).longValue();
+        Uri.Builder uri = CalendarContract.Instances.CONTENT_URI.buildUpon();
+        ContentUris.appendId(uri, from);
+        ContentUris.appendId(uri, to);
+        String[] columns = {
+            CalendarContract.Instances.EVENT_ID,
+            CalendarContract.Instances.BEGIN,
+            CalendarContract.Instances.END,
+            CalendarContract.Instances.TITLE,
+            CalendarContract.Instances.EVENT_LOCATION,
+            CalendarContract.Instances.ALL_DAY,
+            CalendarContract.Instances.STATUS,
+        };
+        try (Cursor c = getContext().getContentResolver().query(uri.build(), columns, null, null, CalendarContract.Instances.BEGIN + " ASC")) {
+            while (c != null && c.moveToNext()) {
+                if (c.getInt(5) == 1) continue; // all day
+                if (!c.isNull(6) && c.getInt(6) == CalendarContract.Events.STATUS_CANCELED) continue;
+                JSObject event = new JSObject();
+                event.put("uid", c.getLong(0) + "@" + c.getLong(1));
+                event.put("title", c.isNull(3) ? "" : c.getString(3));
+                event.put("location", c.isNull(4) ? "" : c.getString(4));
+                event.put("start", c.getLong(1));
+                event.put("end", c.getLong(2));
+                events.put(event);
+            }
+        } catch (SecurityException ignored) {
+            // permission was pulled while we were reading
+        }
+        result.put("events", events);
+        call.resolve(result);
+    }
+
+    private String calendarState() {
+        PermissionState state = getPermissionState("calendar");
+        if (state == PermissionState.GRANTED) return "granted";
+        return state == PermissionState.DENIED ? "denied" : "prompt";
     }
 }
