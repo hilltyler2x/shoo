@@ -5,6 +5,23 @@
 default_platform(:ios)
 
 platform :ios do
+  # Registers the bundle ID com.tylerhill.shoo in the Apple Developer account,
+  # so the App Store Connect "New App" form can pick it. Safe to run twice.
+  lane :register do
+    app_store_connect_api_key(
+      key_id: ENV.fetch('ASC_KEY_ID'),
+      issuer_id: ENV.fetch('ASC_ISSUER_ID'),
+      key_content: ENV.fetch('ASC_KEY_P8'),
+    )
+    existing = Spaceship::ConnectAPI::BundleId.find('com.tylerhill.shoo')
+    if existing
+      UI.success('com.tylerhill.shoo is already registered')
+    else
+      Spaceship::ConnectAPI::BundleId.create(name: 'Shoo', identifier: 'com.tylerhill.shoo', platform: 'IOS')
+      UI.success('Registered com.tylerhill.shoo')
+    end
+  end
+
   # Uploads the App Store listing, and with SUBMIT=true sends the newest
   # TestFlight build to App Review (released automatically once approved).
   lane :listing do

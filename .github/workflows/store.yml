@@ -1,5 +1,5 @@
 # Sends Shoo to the stores. Run it from Actions → "Publish to stores" → Run workflow.
-#  - apple: "listing" uploads the App Store text and screenshots; "submit" also
+#  - apple: "register" registers the bundle ID (first time only); "listing" uploads the App Store text and screenshots; "submit" also
 #    sends the newest TestFlight build to App Review.
 #  - google: "listing" uploads the Play text and pictures; "closed-test" or
 #    "production" also moves the newest internal-testing build there.
@@ -12,7 +12,7 @@ on:
       apple:
         description: App Store
         type: choice
-        options: [listing, submit, skip]
+        options: [listing, submit, register, skip]
         default: listing
       google:
         description: Google Play
@@ -43,7 +43,7 @@ jobs:
         with:
           ruby-version: '3.3'
       - run: gem install fastlane --no-document
-      - run: fastlane ios listing
+      - run: fastlane ios ${{ inputs.apple == 'register' && 'register' || 'listing' }}
 
   google:
     if: inputs.google != 'skip'
