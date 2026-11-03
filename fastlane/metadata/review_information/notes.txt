@@ -1,0 +1,7 @@
+No account or login is needed. To try Shoo:
+1. Open Setup and add a place (search any address, e.g. "1 Infinite Loop, Cupertino").
+2. Go to Plans, add a one-time plan at that place starting about 30 minutes from now.
+3. The Today screen shows when to leave and lists the escalating notifications Shoo will send. Allow notifications to receive them.
+
+Location "Always" is optional. It is used only for geofences that notice when the user leaves (to stop the reminders) and arrives (to celebrate). Without it, the user taps "I've left" on a notification.
+Calendar and Reminders access are optional and read-only.

@@ -245,8 +245,10 @@ function BackgroundLocation({ shoo }: { shoo: ShooState }) {
       ) : (
         <>
           <p className="hint">
-            Set location to <strong>Always</strong> so Shoo can tell you've left and stop nagging, even when it's closed.
-            It only watches the areas around where you are and where you're headed. Without it, tap "I've left" on a nag.
+            Shoo collects your location to notice when you leave and stop nagging, <strong>even when the app is
+            closed or not in use</strong>. Set location to <strong>Always</strong> to turn this on. It only watches the
+            areas around where you are and where you're headed, and your location never leaves your phone except to
+            look up travel times. Without it, tap "I've left" on a nag.
           </p>
           {state === 'prompt' ? (
             <button className="btn" onClick={shoo.requestBackgroundLocation}>

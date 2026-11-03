@@ -2,8 +2,12 @@
 #  - android: a test APK on the "test-build" release, at a link that never changes:
 #    https://github.com/<you>/<repo>/releases/download/test-build/Shoo-test.apk
 #  - ios: compiles the iPhone app and publishes an unsigned .ipa for Sideloadly
+#  - android-release: the signed .aab for Google Play, on the "store-build"
+#    release, and uploaded to Play's internal testing track once the Play key
+#    exists. Skips itself until the Android signing secrets are added.
 #  - testflight: archives the iPhone app on GitHub's Mac machines and uploads it
-#    to TestFlight. Skips itself until the four Apple secrets are added.
+#    to TestFlight (and from there to the App Store). Skips itself until the
+#    four Apple secrets are added.
 name: Build apps
 
 on:
@@ -40,6 +44,15 @@ jobs:
       - name: Build test APK
         working-directory: android
         run: ./gradlew assembleDebug -PversionCode=${{ github.run_number }} --no-daemon
+      - name: Check the signed store bundle builds (throwaway key)
+        working-directory: android
+        run: |
+          keytool -genkeypair -keystore "$RUNNER_TEMP/check.jks" -alias check -keyalg RSA -keysize 2048 \
+            -validity 1 -storepass checkpass -keypass checkpass -dname "CN=Shoo CI check"
+          ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/check.jks" ANDROID_KEYSTORE_PASSWORD=checkpass ANDROID_KEY_ALIAS=check \
+            ./gradlew bundleRelease --no-daemon
+          jarsigner -verify app/build/outputs/bundle/release/app-release.aab | tail -1
+          rm -f "$RUNNER_TEMP/check.jks"
       - run: cp android/app/build/outputs/apk/debug/app-debug.apk Shoo-test.apk
       - uses: actions/upload-artifact@v4
         with:
@@ -140,6 +153,89 @@ jobs:
               --notes "Latest test build from main. Uninstall the old Shoo before installing a new one." || true
           fi
           gh release upload test-build Shoo-unsigned.ipa --clobber
+
+  android-release:
+    # Signed App Bundle for Google Play. Needs these repository secrets:
+    #   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS
+    #   (and ANDROID_KEY_PASSWORD if it differs from the keystore password).
+    # Optional: PLAY_SERVICE_ACCOUNT_JSON uploads each build to the internal track.
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+    steps:
+      - name: Check Android signing secrets
+        id: secrets
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ] || [ -z "$ANDROID_KEY_ALIAS" ]; then
+            echo "::notice title=Play build skipped::Add ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_ALIAS in Settings → Secrets and variables → Actions to build the Google Play bundle."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -n "$PLAY_SERVICE_ACCOUNT_JSON" ]; then echo "play=true" >> "$GITHUB_OUTPUT"; else echo "play=false" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/checkout@v4
+        if: steps.secrets.outputs.ready == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.secrets.outputs.ready == 'true'
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        if: steps.secrets.outputs.ready == 'true'
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - name: Build the web app into the Android project
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          npm ci
+          npm run build:app
+      - name: Write the upload key
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+      - name: Build signed App Bundle
+        if: steps.secrets.outputs.ready == 'true'
+        working-directory: android
+        run: ./gradlew bundleRelease -PversionCode=${{ github.run_number }} --no-daemon
+      - name: Remove the upload key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload.jks"
+      - run: cp android/app/build/outputs/bundle/release/app-release.aab Shoo.aab
+        if: steps.secrets.outputs.ready == 'true'
+      - uses: actions/upload-artifact@v4
+        if: steps.secrets.outputs.ready == 'true'
+        with:
+          name: Shoo-play-aab
+          path: Shoo.aab
+      - name: Publish to the store-build release
+        if: steps.secrets.outputs.ready == 'true' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view store-build >/dev/null 2>&1; then
+            gh release create store-build --prerelease --title "Store build" \
+              --notes "Latest signed Google Play bundle from main. Upload Shoo.aab in Play Console (only needed by hand the first time)." || true
+          fi
+          gh release upload store-build Shoo.aab --clobber
+      - name: Upload to Google Play (internal testing)
+        if: steps.secrets.outputs.ready == 'true' && steps.secrets.outputs.play == 'true' && github.ref == 'refs/heads/main'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.tylerhill.shoo
+          releaseFiles: Shoo.aab
+          track: internal
+          # "draft" until the app has been published once; then set the
+          # repository variable PLAY_RELEASE_STATUS to "completed".
+          status: ${{ vars.PLAY_RELEASE_STATUS || 'draft' }}
 
   testflight:
     # App Store Connect only accepts builds from Xcode 26 (iOS 26 SDK) or newer.

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shoo privacy policy</title>
+<link rel="icon" href="icons/favicon.svg">
+<style>
+  :root { --ink: #1e1b2e; --muted: #5d5870; --accent: #ff5a32; --bg: #fff8f0; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 680px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { color: var(--accent); margin-bottom: 4px; }
+  h2 { margin-top: 32px; font-size: 1.15em; }
+  .muted { color: var(--muted); }
+  a { color: var(--accent); }
+  table { border-collapse: collapse; width: 100%; font-size: 0.95em; }
+  td, th { border-bottom: 1px solid #eadfd4; padding: 8px 6px; text-align: left; vertical-align: top; }
+</style>
+</head>
+<body>
+<main>
+<h1>Shoo privacy policy</h1>
+<p class="muted">Shoo: Never Be Late. · Last updated November 3, 2026</p>
+
+<p><strong>The short version:</strong> Shoo has no accounts, no ads, no analytics and no tracking. Your plans,
+places and settings stay on your phone. Shoo only sends what it has to in order to look up travel times and read
+calendars you link, and nobody keeps it.</p>
+
+<h2>What stays on your phone</h2>
+<p>Your saved places, plans, settings, notification history, and anything Shoo reads from your phone's calendar or
+Reminders are stored only on your device. Screenshots you pick for Quick add are read on the device; the picture is
+never uploaded. Deleting the app deletes all of it.</p>
+
+<h2>What leaves your phone, and why</h2>
+<table>
+  <tr><th>What</th><th>Sent to</th><th>Why</th></tr>
+  <tr><td>Your current location and the place you're going (coordinates)</td>
+      <td>Shoo's server, which asks Google Maps; or directly to OpenStreetMap's routing service (OSRM) if the server can't be reached</td>
+      <td>To work out how long the trip takes, with traffic</td></tr>
+  <tr><td>Addresses and place names you search for</td>
+      <td>Shoo's server, which asks Google Maps; or OpenStreetMap's Nominatim</td>
+      <td>To find the place on the map</td></tr>
+  <tr><td>Calendar links you paste in (iCal addresses)</td>
+      <td>Shoo's server, or the calendar's own website</td>
+      <td>To read your upcoming events</td></tr>
+  <tr><td>Purchases of Shoo Pro</td>
+      <td>Apple or Google, and RevenueCat</td>
+      <td>To unlock Pro and restore it on a new phone</td></tr>
+</table>
+<p>None of these requests carry your name, email, phone number or any account. Shoo's server does not store them; it
+answers and forgets. It keeps a short-lived count of requests per network address to stop abuse. Google, OpenStreetMap
+and RevenueCat handle the data under their own privacy policies:
+<a href="https://policies.google.com/privacy">Google</a>,
+<a href="https://osmfoundation.org/wiki/Privacy_Policy">OpenStreetMap Foundation</a>,
+<a href="https://www.revenuecat.com/privacy">RevenueCat</a>.</p>
+
+<h2>Location in the background</h2>
+<p>If you set location to "Always", Shoo collects your location to notice when you leave and stop nagging you, and to
+notice when you arrive, even when the app is closed or not in use. It does this with geofences: your phone tells Shoo
+when you cross the edge of the area you're leaving or the place you're headed. That location is used only on your
+phone and is not sent anywhere. You can switch it off any time in your phone's settings.</p>
+
+<h2>Calendar and Reminders</h2>
+<p>If you let Shoo read your phone's calendar or Reminders, it reads events and reminders that have a time, only to
+find where you need to be and when. It never changes them, and they stay on your phone. If an event has an address,
+that address is looked up on the map as described above.</p>
+
+<h2>Notifications</h2>
+<p>Shoo's nags are local notifications scheduled on your phone. There are no push servers.</p>
+
+<h2>Sharing and selling</h2>
+<p>Shoo does not sell your data, share it with advertisers or data brokers, or use it to track you across other apps
+and websites.</p>
+
+<h2>Children</h2>
+<p>Shoo is not directed at children under 13 and does not knowingly collect their personal information.</p>
+
+<h2>Your choices</h2>
+<p>You can deny or change location, calendar, Reminders and notification permissions at any time in your phone's
+settings; Shoo still works with a typed-in starting point and the "I've left" button. Because Shoo has no accounts and
+keeps nothing about you on a server, there is nothing to delete beyond uninstalling the app.</p>
+
+<h2>Changes</h2>
+<p>If this policy changes, the new version will be posted here with a new date.</p>
+
+<h2>Contact</h2>
+<p>Questions: open an issue at <a href="https://github.com/hilltyler2x/shoo/issues">github.com/hilltyler2x/shoo/issues</a>
+or see the <a href="support.html">support page</a>.</p>
+</main>
+</body>
+</html>

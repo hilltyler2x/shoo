@@ -18,7 +18,8 @@
     "typecheck": "tsc -b",
     "build:app": "npm run ocr && tsc -b && vite build --mode app && cap sync",
     "icons": "node scripts/render-icons.mjs",
-    "ocr": "node scripts/copy-ocr.mjs"
+    "ocr": "node scripts/copy-ocr.mjs",
+    "screenshots": "node scripts/store-screenshots.mjs"
   },
   "dependencies": {
     "@capacitor-community/in-app-review": "^8.0.0",
