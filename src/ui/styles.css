@@ -611,3 +611,87 @@ textarea {
   padding-top: 10px;
   margin-top: 4px;
 }
+
+.chip-pro {
+  margin-left: 8px;
+  background: color-mix(in srgb, var(--brand) 16%, var(--surface));
+  color: var(--brand);
+  vertical-align: middle;
+}
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgb(0 0 0 / 0.45);
+  padding: 16px 16px calc(16px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+}
+
+.sheet {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100dvh - 32px - var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
+  overflow-y: auto;
+}
+
+.sheet-close {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  font-size: 18px;
+}
+
+.perks {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.plans-pick {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.plan-option {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.plan-option.on {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 10%, var(--surface));
+}
+
+.plan-option .hint {
+  grid-column: 1 / -1;
+}
+
+.plan-name {
+  font-weight: 700;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.plan-price {
+  font-weight: 700;
+}
+
+.hint.small {
+  font-size: 12px;
+}

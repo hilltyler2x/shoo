@@ -99,3 +99,15 @@ Connect record exactly).
 
 `render.yaml` is a Render Blueprint: render.com → New → Blueprint → pick this
 repo → fill in the secrets → deploy.
+
+## Shoo Pro
+
+Free: one saved place, typed-in plans, live traffic, Gentle and Getting
+serious nags. Pro ($4.99/mo with $1.99 for the first 3 months, $29.99/yr with
+a 7-day free trial, or $49.99 lifetime) unlocks everything else. The rules are
+in `src/core/pro.ts`; purchases go through RevenueCat
+(`src/platform/native/purchases.ts`, entitlement `pro`).
+
+Pro switches on only when `VITE_REVENUECAT_IOS_KEY` / `VITE_REVENUECAT_ANDROID_KEY`
+are set in `.env.app` (RevenueCat's public SDK keys). Until then, and always on
+the website, everything is unlocked.

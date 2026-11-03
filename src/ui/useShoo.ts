@@ -10,6 +10,9 @@ import {
   TIER_TITLES,
   addressKey,
   addressesToLookUp,
+  applyFreeLimits,
+  freeOccasion,
+  type ProFeature,
   buildNagSchedule,
   celebrateMessage,
   computeLeavePlan,
@@ -35,9 +38,9 @@ import {
   type TravelEstimate,
   type TripState,
 } from '../core';
-import { platform, type PermissionState, type TripEvent } from '../platform';
+import { platform, type PermissionState, type ProOption, type TripEvent } from '../platform';
 
-const { storage, notifications, location, trip: tripPort, reviews, deviceCalendar } = platform;
+const { storage, notifications, location, trip: tripPort, reviews, deviceCalendar, purchases } = platform;
 
 interface Trip extends TripState {
   /** Where you were when Shoo started watching for this plan. */
@@ -77,6 +80,11 @@ const CELEBRATE_FOR = 30 * MINUTE;
 const MAX_PENDING = 60;
 /** Plans that get nags scheduled ahead. */
 const NAG_AHEAD = 4;
+/** After an on-time arrival, offer Pro at most this often. */
+const PAYWALL_EVERY = 14 * 86_400_000;
+
+/** Why the paywall is open: a Pro feature they reached for, or a happy arrival. */
+export type PaywallReason = ProFeature | 'arrival';
 
 export interface ShooState {
   now: number;
@@ -124,6 +132,20 @@ export interface ShooState {
   /** On-time arrivals so far, for the "Rate Shoo" nudge. */
   onTimeArrivals: number;
   storeUrl: string | null;
+  platformName: 'web' | 'ios' | 'android';
+  pro: {
+    /** Pro features usable right now (bought, or no store set up yet). */
+    unlocked: boolean;
+    /** The store is set up, so there's something to buy. */
+    forSale: boolean;
+    paywall: PaywallReason | null;
+    /** Opens the paywall if the feature is locked. Returns true if it's free to use. */
+    gate: (feature: ProFeature) => boolean;
+    close: () => void;
+    options: () => Promise<ProOption[]>;
+    buy: (id: string) => Promise<boolean>;
+    restore: () => Promise<boolean>;
+  };
 }
 
 interface StoredReviews extends ReviewState {
@@ -157,6 +179,9 @@ export function useShoo(): ShooState {
   const [serverWaking, setServerWaking] = useState(false);
   const [passcodeRequired, setPasscodeRequired] = useState(false);
   const [passcodeOk, setPasscodeOk] = useState(true);
+  const [pro, setPro] = useState<boolean>(() => storage.load('pro', false));
+  const [paywall, setPaywall] = useState<PaywallReason | null>(null);
+  const unlocked = !purchases.available || pro;
 
   const [reviewState, setReviewState] = useState<StoredReviews>(() => {
     const saved = storage.load<StoredReviews | null>('reviews', null);
@@ -171,6 +196,39 @@ export function useShoo(): ShooState {
   useEffect(() => storage.save('calendars', calendars), [calendars]);
   useEffect(() => storage.save('deviceEvents', deviceEvents), [deviceEvents]);
   useEffect(() => storage.save('geocoded', geocoded), [geocoded]);
+  useEffect(() => storage.save('pro', pro), [pro]);
+
+  // Shoo Pro: ask the store once at launch and listen for changes (renewals, refunds).
+  useEffect(() => {
+    if (!purchases.available) return;
+    purchases.isPro().then(setPro).catch(() => {});
+    return purchases.onChange(setPro);
+  }, []);
+  const gate = useCallback(
+    (feature: ProFeature) => {
+      if (unlocked) return true;
+      setPaywall(feature);
+      return false;
+    },
+    [unlocked],
+  );
+  const buy = useCallback(async (id: string) => {
+    const ok = await purchases.buy(id);
+    if (ok) {
+      setPro(true);
+      setPaywall(null);
+    }
+    return ok;
+  }, []);
+  const restore = useCallback(async () => {
+    const ok = await purchases.restore();
+    setPro(ok);
+    if (ok) setPaywall(null);
+    return ok;
+  }, []);
+
+  // Free accounts plan with one place and typed-in plans. Nothing saved is lost.
+  const effective = useMemo(() => (unlocked ? settings : applyFreeLimits(settings)), [unlocked, settings]);
 
   const update = useCallback((patch: Partial<Settings>) => setSettings((s) => ({ ...s, ...patch })), []);
 
@@ -236,7 +294,7 @@ export function useShoo(): ShooState {
   }, []);
 
   // Location: only once there's somewhere to measure against.
-  const wantsLocation = settings.places.length > 0 || settings.calendars.length > 0 || settings.deviceCalendar;
+  const wantsLocation = effective.places.length > 0 || effective.calendars.length > 0 || effective.deviceCalendar;
   useEffect(() => {
     if (!wantsLocation) return;
     return location.watch(
@@ -269,18 +327,18 @@ export function useShoo(): ShooState {
 
   useEffect(() => {
     if (!passcodeOk) return;
-    for (const feed of settings.calendars) {
+    for (const feed of effective.calendars) {
       const cache = calendars[feed.id];
       if (cache?.url === feed.url && now - cache.fetchedAt < CALENDAR_FRESH) continue;
       if (syncing[feed.id] || calendarErrors[feed.id]) continue;
       syncCalendar(feed.id);
     }
-  }, [settings.calendars, calendars, now, syncing, calendarErrors, passcodeOk, syncCalendar]);
+  }, [effective.calendars, calendars, now, syncing, calendarErrors, passcodeOk, syncCalendar]);
 
   // The phone's own calendar and Reminders.
   const deviceOn =
     deviceCalendar.available &&
-    settings.deviceCalendar &&
+    effective.deviceCalendar &&
     (devicePermission.calendar === 'granted' || devicePermission.reminders === 'granted');
   const readDevice = useCallback(() => {
     const t = Date.now();
@@ -315,26 +373,27 @@ export function useShoo(): ShooState {
   const feedEvents = useMemo(
     () =>
       Object.fromEntries(
-        settings.calendars.map((f) => [f.id, calendars[f.id]?.url === f.url ? calendars[f.id].events : []]),
+        effective.calendars.map((f) => [f.id, calendars[f.id]?.url === f.url ? calendars[f.id].events : []]),
       ),
-    [settings.calendars, calendars],
+    [effective.calendars, calendars],
   );
   const shifts = useMemo(
-    () => upcomingShifts(settings, feedEvents, deviceOn ? deviceEvents.events : [], now),
-    [settings, feedEvents, deviceOn, deviceEvents.events, now],
+    () => upcomingShifts(effective, feedEvents, deviceOn ? deviceEvents.events : [], now),
+    [effective, feedEvents, deviceOn, deviceEvents.events, now],
   );
   const plans: Planned[] = useMemo(
     () =>
       shifts.map((shift) => {
-        const destination = destinationFor(shift, settings, geocoded);
-        const place = settings.places.find((p) => p.id === destination?.placeId);
+        const destination = destinationFor(shift, effective, geocoded);
+        const place = effective.places.find((p) => p.id === destination?.placeId);
+        const kind = place?.kind ?? destination?.kind;
         return {
           shift,
           destination,
-          occasion: detectOccasion(shift.title, destination?.name ?? '', place?.kind ?? destination?.kind),
+          occasion: unlocked ? detectOccasion(shift.title, destination?.name ?? '', kind) : freeOccasion(kind),
         };
       }),
-    [shifts, settings, geocoded],
+    [shifts, effective, geocoded, unlocked],
   );
 
   // Look up calendar addresses, one at a time (OpenStreetMap asks for one a second).
@@ -342,8 +401,8 @@ export function useShoo(): ShooState {
   // Lookups that failed (offline, say): try again next launch, not every second.
   const failedLookups = useRef(new Set<string>());
   const toLookUp = useMemo(
-    () => addressesToLookUp(shifts, settings, geocoded).filter((a) => !failedLookups.current.has(a)),
-    [shifts, settings, geocoded, now], // eslint-disable-line react-hooks/exhaustive-deps
+    () => addressesToLookUp(shifts, effective, geocoded).filter((a) => !failedLookups.current.has(a)),
+    [shifts, effective, geocoded, now], // eslint-disable-line react-hooks/exhaustive-deps
   );
   useEffect(() => {
     if (geocoding.current || toLookUp.length === 0 || !passcodeOk) return;
@@ -534,10 +593,17 @@ export function useShoo(): ShooState {
     const now = Date.now();
     const ask = reviews.available && shouldAskForReview(counted, now, trip.arrivedAt);
     setReviewState(ask ? { ...recordAsk(counted, now), counted: counted.counted } : counted);
-    if (!ask) return;
+    // Never both on one arrival: a review ask wins, otherwise maybe offer Pro.
+    const lastOffer = storage.load('paywallAt', 0);
+    const offer =
+      !ask && purchases.available && !pro && counted.onTimeArrivals >= 2 && now - lastOffer > PAYWALL_EVERY;
+    if (!ask && !offer) return;
+    if (offer) storage.save('paywallAt', now);
     // Let the "Made it" screen land first.
     const id = window.setTimeout(() => {
-      if (document.visibilityState === 'visible') void reviews.request().catch(() => {});
+      if (document.visibilityState !== 'visible') return;
+      if (ask) void reviews.request().catch(() => {});
+      else setPaywall('arrival');
     }, 2500);
     return () => window.clearTimeout(id);
   }, [activeId, trip.arrivedAt]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -554,11 +620,12 @@ export function useShoo(): ShooState {
         trafficAware: route.estimate.trafficAware,
         where: p.destination!.name,
         occasion: p.occasion,
+        panic: unlocked,
       });
       out.push(...pendingNags(schedule, now));
     }
     return out.sort((a, b) => a.at - b.at).slice(0, MAX_PENDING);
-  }, [plans, trips, estimateFor, planFor, now]);
+  }, [plans, trips, estimateFor, planFor, now, unlocked]);
 
   // Only hand the device a new list when something actually changed.
   const nagKey = nags.map((n) => `${n.id}@${n.at}`).join('|');
@@ -622,6 +689,17 @@ export function useShoo(): ShooState {
     openSettings,
     onTimeArrivals: reviewState.onTimeArrivals,
     storeUrl: reviews.storeUrl,
+    platformName: platform.name,
+    pro: {
+      unlocked,
+      forSale: purchases.available,
+      paywall,
+      gate,
+      close: () => setPaywall(null),
+      options: () => purchases.options(),
+      buy,
+      restore,
+    },
   };
 }
 
