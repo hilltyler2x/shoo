@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { platform } from '../platform';
+import { Paywall } from './Paywall';
 import { Plans } from './Plans';
 import { Setup } from './Setup';
 import { Today } from './Today';
@@ -38,6 +39,7 @@ export function App() {
         {shown === 'plans' && <Plans shoo={shoo} />}
         {shown === 'setup' && <Setup shoo={shoo} />}
       </main>
+      {shoo.pro.paywall && <Paywall shoo={shoo} />}
       <nav className="tabbar" aria-label="Sections">
         {TABS.map((t) => (
           <button

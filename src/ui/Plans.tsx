@@ -8,6 +8,7 @@ import {
   type Place,
   type SavedPlace,
   type Shift,
+  type ProFeature,
   type WeeklyShift,
 } from '../core';
 import { clock, dayLabel } from './format';
@@ -21,15 +22,17 @@ const newId = () => Math.random().toString(36).slice(2, 10);
 export function Plans({ shoo }: { shoo: ShooState }) {
   const { settings, update } = shoo;
   const addManual = (shifts: Shift[]) => update({ manualShifts: [...settings.manualShifts, ...shifts] });
+  const gate = shoo.pro.gate;
+  const locked = !shoo.pro.unlocked;
 
   return (
     <div className="stack">
       <ComingUp shoo={shoo} />
-      <QuickAdd places={settings.places} onAdd={addManual} />
+      <QuickAdd places={settings.places} onAdd={addManual} gate={gate} locked={locked} />
       {shoo.device.available && <PhoneCalendar shoo={shoo} />}
       <Calendars shoo={shoo} />
       <WeeklyEditor places={settings.places} weekly={settings.weekly} onChange={(weekly) => update({ weekly })} />
-      <OneOff places={settings.places} onAdd={(s) => addManual([s])} />
+      <OneOff places={settings.places} onAdd={(s) => addManual([s])} gate={gate} />
     </div>
   );
 }
@@ -171,7 +174,20 @@ function PlaceSelect({
 }
 
 /** Paste a schedule or a confirmation email, or pick a screenshot, and get plans out of it. */
-function QuickAdd({ places, onAdd }: { places: SavedPlace[]; onAdd: (shifts: Shift[]) => void }) {
+/** "Pro" next to a card title, when it's locked. */
+const ProChip = ({ locked }: { locked: boolean }) => (locked ? <span className="chip chip-pro">Pro</span> : null);
+
+function QuickAdd({
+  places,
+  onAdd,
+  gate,
+  locked,
+}: {
+  places: SavedPlace[];
+  onAdd: (shifts: Shift[]) => void;
+  gate: (feature: ProFeature) => boolean;
+  locked: boolean;
+}) {
   const [text, setText] = useState('');
   const [found, setFound] = useState<{ start: number; end?: number; address?: string; keep: boolean }[] | null>(null);
   const [placeId, setPlaceId] = useState(() => places.find((p) => p.kind === 'work')?.id ?? '');
@@ -236,7 +252,9 @@ function QuickAdd({ places, onAdd }: { places: SavedPlace[]; onAdd: (shifts: Shi
 
   return (
     <section className="card">
-      <h2>Quick add ✨</h2>
+      <h2>
+        Quick add ✨ <ProChip locked={locked} />
+      </h2>
       <p className="hint">
         Paste your work schedule, a text from your manager, or a confirmation email (dentist, dinner reservation,
         flight). Or pick a screenshot of your schedule app. Shoo pulls out the dates and times. Screenshots are read on
@@ -250,10 +268,18 @@ function QuickAdd({ places, onAdd }: { places: SavedPlace[]; onAdd: (shifts: Shi
         aria-label="Schedule or email text"
       />
       <div className="row">
-        <button className="btn" disabled={!text.trim() || reading !== null} onClick={() => find(text)}>
+        <button
+          className="btn"
+          disabled={!text.trim() || reading !== null}
+          onClick={() => gate('quickAdd') && find(text)}
+        >
           Find plans
         </button>
-        <button className="btn btn-ghost" disabled={reading !== null} onClick={() => fileInput.current?.click()}>
+        <button
+          className="btn btn-ghost"
+          disabled={reading !== null}
+          onClick={() => gate('quickAdd') && fileInput.current?.click()}
+        >
           📷 Screenshot
         </button>
         <input
@@ -313,7 +339,9 @@ function PhoneCalendar({ shoo }: { shoo: ShooState }) {
   const connected = settings.deviceCalendar && (device.calendar === 'granted' || device.remindersPermission === 'granted');
   return (
     <section className="card">
-      <h2>Phone calendar{device.reminders ? ' & Reminders' : ''}</h2>
+      <h2>
+        Phone calendar{device.reminders ? ' & Reminders' : ''} <ProChip locked={!shoo.pro.unlocked} />
+      </h2>
       <p className="hint">
         Shoo reads (never changes) your phone's calendar{device.reminders ? ' and Reminders app' : ''}. Anything with
         an address, or that matches one of your places, gets a leave time. That includes the Google, Outlook and
@@ -322,14 +350,18 @@ function PhoneCalendar({ shoo }: { shoo: ShooState }) {
       {connected && <p className="hint">✅ Connected · {device.count} upcoming</p>}
       <div className="row">
         {device.calendar !== 'granted' && (
-          <button className="btn" onClick={() => void device.request('calendar')} disabled={device.calendar === 'denied'}>
+          <button
+            className="btn"
+            onClick={() => shoo.pro.gate('phoneCalendar') && void device.request('calendar')}
+            disabled={device.calendar === 'denied'}
+          >
             Connect calendar
           </button>
         )}
         {device.reminders && device.remindersPermission !== 'granted' && (
           <button
             className="btn btn-ghost"
-            onClick={() => void device.request('reminders')}
+            onClick={() => shoo.pro.gate('phoneCalendar') && void device.request('reminders')}
             disabled={device.remindersPermission === 'denied'}
           >
             Connect Reminders
@@ -341,7 +373,7 @@ function PhoneCalendar({ shoo }: { shoo: ShooState }) {
           </button>
         )}
         {!settings.deviceCalendar && (device.calendar === 'granted' || device.remindersPermission === 'granted') && (
-          <button className="btn" onClick={() => update({ deviceCalendar: true })}>
+          <button className="btn" onClick={() => shoo.pro.gate('phoneCalendar') && update({ deviceCalendar: true })}>
             Turn back on
           </button>
         )}
@@ -425,6 +457,7 @@ function Calendars({ shoo }: { shoo: ShooState }) {
   const [placeId, setPlaceId] = useState('');
 
   const pick = (s: Source) => {
+    if (!shoo.pro.gate('calendars')) return;
     setSource(s);
     setPlaceId(s.work ? (settings.places.find((p) => p.kind === 'work')?.id ?? '') : '');
   };
@@ -440,7 +473,9 @@ function Calendars({ shoo }: { shoo: ShooState }) {
 
   return (
     <section className="card">
-      <h2>Linked calendars & work schedules</h2>
+      <h2>
+        Linked calendars & work schedules <ProChip locked={!shoo.pro.unlocked} />
+      </h2>
       <p className="hint">
         Link your work schedule app (Homebase, When I Work, 7shifts, Deputy) or any calendar. Shoo checks it every 30
         minutes for new plans.
@@ -591,17 +626,25 @@ function WeeklyEditor({
   );
 }
 
-function OneOff({ places, onAdd }: { places: SavedPlace[]; onAdd: (s: Shift) => void }) {
+function OneOff({
+  places,
+  onAdd,
+  gate,
+}: {
+  places: SavedPlace[];
+  onAdd: (s: Shift) => void;
+  gate: (feature: ProFeature) => boolean;
+}) {
   const [date, setDate] = useState(() => new Date().toLocaleDateString('en-CA'));
   const [time, setTime] = useState('09:00');
   const [title, setTitle] = useState('');
-  const [placeId, setPlaceId] = useState(() => places[0]?.id ?? '');
+  const [placeId, setPlaceId] = useState(() => places[0]?.id ?? 'elsewhere');
   const [elsewhere, setElsewhere] = useState<Place | null>(null);
   const somewhereElse = placeId === 'elsewhere';
 
   const add = () => {
     const start = new Date(`${date}T${time}`).getTime();
-    if (Number.isNaN(start)) return;
+    if (Number.isNaN(start) || (somewhereElse && !gate('elsewhere'))) return;
     const saved = places.find((p) => p.id === placeId);
     onAdd({
       id: `manual:${newId()}`,
@@ -633,7 +676,11 @@ function OneOff({ places, onAdd }: { places: SavedPlace[]; onAdd: (s: Shift) => 
       </div>
       <label className="field">
         <span className="field-label">Where</span>
-        <select value={placeId} onChange={(e) => setPlaceId(e.target.value)} aria-label="Where">
+        <select
+          value={placeId}
+          onChange={(e) => (e.target.value !== 'elsewhere' || gate('elsewhere')) && setPlaceId(e.target.value)}
+          aria-label="Where"
+        >
           {places.map((p) => (
             <option key={p.id} value={p.id}>
               {PLACE_KINDS[p.kind]?.icon} {p.name}
@@ -642,14 +689,8 @@ function OneOff({ places, onAdd }: { places: SavedPlace[]; onAdd: (s: Shift) => 
           <option value="elsewhere">📍 Somewhere else…</option>
         </select>
       </label>
-      {(somewhereElse || places.length === 0) && (
-        <PlaceSearch label="Address" value={elsewhere} onChange={setElsewhere} hereLabel="Right here" />
-      )}
-      <button
-        className="btn"
-        disabled={(somewhereElse || places.length === 0) && !elsewhere}
-        onClick={add}
-      >
+      {somewhereElse && <PlaceSearch label="Address" value={elsewhere} onChange={setElsewhere} hereLabel="Right here" />}
+      <button className="btn" disabled={somewhereElse && !elsewhere} onClick={add}>
         Add plan
       </button>
     </section>

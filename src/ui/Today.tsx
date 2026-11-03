@@ -142,6 +142,15 @@ export function Today({ shoo, goTo }: { shoo: ShooState; goTo: (tab: 'plans' | '
               </li>
             ))}
           </ol>
+          {!shoo.pro.unlocked && (
+            <p className="hint">
+              Still on the couch at go time? Panic mode is in{' '}
+              <button className="link" onClick={() => shoo.pro.gate('panic')}>
+                Shoo Pro
+              </button>
+              .
+            </p>
+          )}
           {!shoo.firesWhenClosed && (
             <p className="hint">
               On the website these only pop up while Shoo is open. The phone app sends them even when it's closed.

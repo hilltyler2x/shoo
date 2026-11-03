@@ -85,6 +85,30 @@ export interface DeviceCalendarPort {
   events(from: number, to: number): Promise<CalendarEvent[]>;
 }
 
+export interface ProOption {
+  /** Store package id, passed back to buy(). */
+  id: string;
+  kind: 'monthly' | 'annual' | 'lifetime';
+  /** "$4.99", in the shopper's own currency. */
+  price: string;
+  /** "7-day free trial" or "$1.99/mo for 3 months", when the store has one. */
+  intro: string | null;
+}
+
+/**
+ * Shoo Pro through the App Store and Google Play (RevenueCat). Not available
+ * on the website or before the store keys exist; then everything is unlocked.
+ */
+export interface PurchasesPort {
+  readonly available: boolean;
+  isPro(): Promise<boolean>;
+  options(): Promise<ProOption[]>;
+  /** True if it went through; false if they backed out. Throws on a real error. */
+  buy(id: string): Promise<boolean>;
+  restore(): Promise<boolean>;
+  onChange(fn: (pro: boolean) => void): () => void;
+}
+
 export interface StoragePort {
   load<T>(key: string, fallback: T): T;
   save<T>(key: string, value: T): void;
@@ -98,4 +122,5 @@ export interface Platform {
   trip: TripPort;
   reviews: ReviewPort;
   deviceCalendar: DeviceCalendarPort;
+  purchases: PurchasesPort;
 }

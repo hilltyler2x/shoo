@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { PLACE_KINDS, type Place, type PlaceKind, type SavedPlace, type TravelMode } from '../core';
+import { FREE_PLACES, PLACE_KINDS, type Place, type PlaceKind, type SavedPlace, type TravelMode } from '../core';
 import { PlaceSearch } from './PlaceSearch';
 import type { ShooState } from './useShoo';
 
@@ -15,7 +15,14 @@ export function Setup({ shoo }: { shoo: ShooState }) {
 
   return (
     <div className="stack">
-      <Places places={settings.places} onChange={(places) => update({ places })} />
+      <Places
+        places={settings.places}
+        onChange={(places) => update({ places })}
+        canAdd={() => settings.places.length < FREE_PLACES || shoo.pro.gate('places')}
+        locked={!shoo.pro.unlocked}
+      />
+
+      {shoo.pro.forSale && <ProCard shoo={shoo} />}
 
       <section className="card">
         <h2>Where do you usually leave from?</h2>
@@ -100,7 +107,18 @@ export function Setup({ shoo }: { shoo: ShooState }) {
 const KIND_ORDER = Object.keys(PLACE_KINDS) as PlaceKind[];
 const newId = () => Math.random().toString(36).slice(2, 10);
 
-function Places({ places, onChange }: { places: SavedPlace[]; onChange: (places: SavedPlace[]) => void }) {
+function Places({
+  places,
+  onChange,
+  canAdd,
+  locked,
+}: {
+  places: SavedPlace[];
+  onChange: (places: SavedPlace[]) => void;
+  /** Opens the paywall instead when the free place is used up. */
+  canAdd: () => boolean;
+  locked: boolean;
+}) {
   const [adding, setAdding] = useState(places.length === 0);
   const [kind, setKind] = useState<PlaceKind>(places.some((p) => p.kind === 'work') ? 'gym' : 'work');
   const [name, setName] = useState('');
@@ -124,11 +142,12 @@ function Places({ places, onChange }: { places: SavedPlace[]; onChange: (places:
       </p>
       {places.length > 0 && (
         <ul className="shift-list">
-          {places.map((p) => (
+          {places.map((p, i) => (
             <li key={p.id}>
               <div>
                 <strong>
                   {PLACE_KINDS[p.kind]?.icon ?? '📍'} {p.name}
+                  {locked && i >= FREE_PLACES && <span className="chip chip-pro">Pro</span>}
                 </strong>
                 <div className="hint">{p.label}</div>
               </div>
@@ -173,10 +192,43 @@ function Places({ places, onChange }: { places: SavedPlace[]; onChange: (places:
           </div>
         </>
       ) : (
-        <button className="btn" onClick={() => setAdding(true)}>
-          Add a place
+        <button className="btn" onClick={() => canAdd() && setAdding(true)}>
+          Add a place{locked && places.length >= FREE_PLACES ? ' ✨' : ''}
         </button>
       )}
+    </section>
+  );
+}
+
+function ProCard({ shoo }: { shoo: ShooState }) {
+  const [note, setNote] = useState('');
+  if (shoo.pro.unlocked) {
+    return (
+      <section className="card">
+        <h2>Shoo Pro 🎉</h2>
+        <p className="hint">You've got everything. Manage or cancel any time in your phone's subscription settings.</p>
+      </section>
+    );
+  }
+  return (
+    <section className="card">
+      <h2>Shoo Pro ✨</h2>
+      <p className="hint">
+        Free gets you to work on time. Pro does it for everything: more places, calendar and shift app sync, Quick add,
+        Panic mode, and jokes for every occasion.
+      </p>
+      <div className="row">
+        <button className="btn" onClick={() => shoo.pro.gate('places')}>
+          See Pro
+        </button>
+        <button
+          className="link"
+          onClick={async () => setNote((await shoo.pro.restore().catch(() => false)) ? '' : 'No Pro purchase found on this account.')}
+        >
+          Restore purchases
+        </button>
+      </div>
+      {note && <p className="hint">{note}</p>}
     </section>
   );
 }

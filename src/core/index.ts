@@ -10,3 +10,4 @@ export * from './trip';
 export * from './reviews';
 export * from './places';
 export * from './schedule';
+export * from './pro';

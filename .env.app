@@ -5,3 +5,7 @@ VITE_API_URL=https://shoo.onrender.com
 # Apple's numeric app id (App Store Connect → your app → App Information → Apple ID).
 # Turns on the "Rate Shoo" button on iPhone. Leave empty until the app exists.
 VITE_APP_STORE_ID=
+# RevenueCat's public SDK keys (Project settings → API keys: "appl_…" and "goog_…").
+# Not secrets. Leave empty to keep every Pro feature unlocked (testing, launch).
+VITE_REVENUECAT_IOS_KEY=
+VITE_REVENUECAT_ANDROID_KEY=

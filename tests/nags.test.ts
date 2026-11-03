@@ -106,3 +106,13 @@ describe('occasions', () => {
     expect(gym).not.toMatch(/manager|coworker/);
   });
 });
+
+describe('free nags', () => {
+  it('stop at Getting serious but keep going until the start', () => {
+    const plan = computeLeavePlan({ shiftStart: at(9, 0), travelMinutes: 22, prepMinutes: 10, arriveEarlyMinutes: 10 });
+    const free = buildNagSchedule('f', plan, { panic: false });
+    expect(free.some((n) => n.tier === 'panic')).toBe(false);
+    expect(free.filter((n) => n.tier === 'serious').length).toBe(6);
+    expect(free.at(-1)!.at).toBeLessThanOrEqual(at(9, 0));
+  });
+});

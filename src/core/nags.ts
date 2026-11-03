@@ -16,6 +16,8 @@ export interface NagOptions {
   /** Where you're going, for the messages. */
   where: string;
   occasion: Occasion;
+  /** Panic mode is Pro. Without it the ladder stops at Getting serious. */
+  panic: boolean;
 }
 
 export const DEFAULT_NAG_OPTIONS: NagOptions = {
@@ -26,6 +28,7 @@ export const DEFAULT_NAG_OPTIONS: NagOptions = {
   trafficAware: false,
   where: 'Work',
   occasion: 'work',
+  panic: true,
 };
 
 /**
@@ -51,7 +54,8 @@ export function buildNagSchedule(
   // The last moment you can leave and still make the start is where panic begins.
   const lastOnTimeLeave = shiftStart - plan.travelMinutes * MINUTE;
   const panicStart = Math.max(leaveAt + opts.seriousEvery * MINUTE, lastOnTimeLeave);
-  const seriousTimes = steps(leaveAt, panicStart, opts.seriousEvery);
+  // Without Panic mode, Getting serious keeps going until the start time instead.
+  const seriousTimes = steps(leaveAt, opts.panic ? panicStart : shiftStart + 1, opts.seriousEvery);
   const panicTimes = steps(panicStart, shiftStart + opts.panicAfterStart * MINUTE + 1, opts.panicEvery);
 
   const nags: ScheduledNag[] = [];
@@ -69,7 +73,7 @@ export function buildNagSchedule(
 
   add('gentle', gentleTimes);
   add('serious', capTimes(seriousTimes, 6));
-  add('panic', capTimes(panicTimes, 6), 'last');
+  if (opts.panic) add('panic', capTimes(panicTimes, 6), 'last');
   return nags.slice(0, opts.maxPerShift);
 }
 
