@@ -17,9 +17,11 @@ platform :ios do
     if existing
       UI.success('com.tylerhill.shoo is already registered')
     else
-      Spaceship::ConnectAPI::BundleId.create(name: 'Shoo', identifier: 'com.tylerhill.shoo', platform: 'IOS')
+      existing = Spaceship::ConnectAPI::BundleId.create(name: 'Shoo', identifier: 'com.tylerhill.shoo', platform: 'IOS')
       UI.success('Registered com.tylerhill.shoo')
     end
+    # The App ID prefix is the Apple Team ID that signing needs (APPLE_TEAM_ID).
+    UI.important("Apple Team ID: #{existing.seed_id}")
   end
 
   # Uploads the App Store listing, and with SUBMIT=true sends the newest
