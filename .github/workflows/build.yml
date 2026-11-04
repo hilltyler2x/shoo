@@ -242,7 +242,7 @@ jobs:
     runs-on: macos-26
     if: github.event_name != 'pull_request'
     env:
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || '92DQYZ2VNV' }}
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID || '4W4KW65TLT' }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID || '87e587b3-fe47-4ba4-a2a5-fa975312adf5' }}
       ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
