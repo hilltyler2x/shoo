@@ -117,7 +117,8 @@ the website, everything is unlocked.
 - **Builds** (`build.yml`, on every merge to `main`): the iPhone app goes to
   TestFlight; the signed Android bundle goes to the `store-build` release and
   Play's internal testing track. Secrets: `APPLE_TEAM_ID`, `ASC_KEY_ID`,
-  `ASC_ISSUER_ID`, `ASC_KEY_P8` (Apple); `ANDROID_KEYSTORE_BASE64`,
+  `ASC_ISSUER_ID`, `ASC_KEY_P8` (Apple; the key ID and issuer ID default to the
+  values in the workflows, so only the `.p8` key is a secret); `ANDROID_KEYSTORE_BASE64`,
   `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `PLAY_SERVICE_ACCOUNT_JSON` (Google).
 - **Listings and release** (`store.yml`, run by hand: Actions → Publish to
   stores): uploads the text and screenshots in `fastlane/`, and can submit the
