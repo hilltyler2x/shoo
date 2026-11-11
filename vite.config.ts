@@ -32,7 +32,8 @@ export default defineConfig(({ mode }) => ({
         ],
       },
       workbox: {
-        navigateFallbackDenylist: [/^\/api\//],
+        // The answer pages, sitemap etc. are real pages, not the app.
+        navigateFallbackDenylist: [/^\/api\//, /\/answers(\/|$)/, /\.(html|xml|txt)$/],
         // The screenshot reader is big and rarely used: fetched when needed, not installed up front.
         globIgnores: ['ocr/**'],
       },
